@@ -1,0 +1,38 @@
+modules = ["nodejs-24", "postgresql-16"]
+
+[[artifacts]]
+id = "artifacts/api-server"
+
+[[artifacts]]
+id = "artifacts/mockup-sandbox"
+
+[deployment]
+router = "application"
+deploymentTarget = "autoscale"
+
+[deployment.postBuild]
+args = ["pnpm", "store", "prune"]
+env = { "CI" = "true" }
+
+[workflows]
+runButton = "Project"
+
+[agent]
+stack = "PNPM_WORKSPACE"
+expertMode = true
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 20000
+
+[userenv]
+
+[userenv.shared]
+TWOGIS_API_KEY = "2a7e10c0-891a-4738-9889-e6b6287274fa"
+VITE_TWOGIS_KEY = "2a7e10c0-891a-4738-9889-e6b6287274fa"
+VAPID_PUBLIC_KEY = "BFGeVQUvv44CgnH331teIPMfp4Jo2wBTVolx3LJQWROg7AqOuqNodkPf0cFab33INCInnW27_Ani2FSBqYBbst8"
+VAPID_PRIVATE_KEY = "ao_8DpdUsSGHKm7VhoHCbEwV6RCqoF6Wne-09R8rbSk"
+VAPID_SUBJECT = "mailto:admin@taxiimpulse.ru"
+
+[nix]
+channel = "stable-25_05"

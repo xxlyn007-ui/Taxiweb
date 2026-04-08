@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "TAXI IMPULSE"
+version = "1.0.0"
+id = "artifacts/taxi-impulse"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 24377
+
+[services.development]
+run = "pnpm --filter @workspace/taxi-impulse run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/taxi-impulse", "run", "build" ]
+publicDir = "artifacts/taxi-impulse/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "24377"
+BASE_PATH = "/"

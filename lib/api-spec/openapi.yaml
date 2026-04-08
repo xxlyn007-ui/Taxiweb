@@ -1,0 +1,1314 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 1.0.0
+  description: TAXI IMPULSE API
+servers:
+  - url: /api
+tags:
+  - name: health
+  - name: auth
+  - name: orders
+  - name: drivers
+  - name: users
+  - name: stats
+  - name: tariffs
+  - name: cities
+  - name: chat
+  - name: support
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+
+  /auth/register-driver:
+    post:
+      operationId: registerDriver
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterDriverRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegisterDriverResponse'
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /orders:
+    get:
+      operationId: getOrders
+      tags: [orders]
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: driverId
+          schema:
+            type: integer
+        - in: query
+          name: passengerId
+          schema:
+            type: integer
+        - in: query
+          name: city
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Order'
+    post:
+      operationId: createOrder
+      tags: [orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+
+  /orders/estimate:
+    post:
+      operationId: estimatePrice
+      tags: [orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EstimateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EstimateResponse'
+
+  /orders/{id}:
+    get:
+      operationId: getOrderById
+      tags: [orders]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+    patch:
+      operationId: updateOrder
+      tags: [orders]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateOrderRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+
+  /orders/{id}/rate:
+    post:
+      operationId: rateOrder
+      tags: [orders]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RateOrderRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+
+  /drivers:
+    get:
+      operationId: getDrivers
+      tags: [drivers]
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: city
+          schema:
+            type: string
+        - in: query
+          name: isApproved
+          schema:
+            type: boolean
+        - in: query
+          name: pendingApproval
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Driver'
+    post:
+      operationId: createDriver
+      tags: [drivers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDriverRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+
+  /drivers/{id}:
+    get:
+      operationId: getDriverById
+      tags: [drivers]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+    patch:
+      operationId: updateDriver
+      tags: [drivers]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDriverRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+
+  /drivers/{id}/status:
+    patch:
+      operationId: updateDriverStatus
+      tags: [drivers]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverStatusRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+
+  /drivers/{id}/block:
+    patch:
+      operationId: blockDriver
+      tags: [drivers]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BlockDriverRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+
+  /drivers/{id}/approve:
+    patch:
+      operationId: approveDriver
+      tags: [drivers]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveDriverRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Driver'
+
+  /users:
+    get:
+      operationId: getUsers
+      tags: [users]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+
+  /users/{id}:
+    get:
+      operationId: getUserById
+      tags: [users]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+    patch:
+      operationId: updateUser
+      tags: [users]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  /stats:
+    get:
+      operationId: getStats
+      tags: [stats]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Stats'
+
+  /stats/by-city:
+    get:
+      operationId: getStatsByCity
+      tags: [stats]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CityStats'
+
+  /tariffs:
+    get:
+      operationId: getTariffs
+      tags: [tariffs]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Tariff'
+    post:
+      operationId: createTariff
+      tags: [tariffs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTariffRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tariff'
+
+  /tariffs/{id}:
+    patch:
+      operationId: updateTariff
+      tags: [tariffs]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTariffRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tariff'
+    delete:
+      operationId: deleteTariff
+      tags: [tariffs]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+
+  /tariff-options:
+    get:
+      operationId: getTariffOptions
+      tags: [tariffs]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/TariffOption'
+    post:
+      operationId: createTariffOption
+      tags: [tariffs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTariffOptionRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TariffOption'
+
+  /tariff-options/{id}:
+    patch:
+      operationId: updateTariffOption
+      tags: [tariffs]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTariffOptionRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TariffOption'
+    delete:
+      operationId: deleteTariffOption
+      tags: [tariffs]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+
+  /cities:
+    get:
+      operationId: getCities
+      tags: [cities]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/City'
+
+  /chat/{orderId}/messages:
+    get:
+      operationId: getChatMessages
+      tags: [chat]
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatMessage'
+    post:
+      operationId: sendChatMessage
+      tags: [chat]
+      parameters:
+        - in: path
+          name: orderId
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessage'
+
+  /support/messages:
+    get:
+      operationId: getSupportMessages
+      tags: [support]
+      parameters:
+        - in: query
+          name: userId
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SupportMessage'
+    post:
+      operationId: sendSupportMessage
+      tags: [support]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendSupportMessageRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupportMessage'
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required: [status]
+
+    LoginRequest:
+      type: object
+      properties:
+        phone:
+          type: string
+        password:
+          type: string
+      required: [phone, password]
+
+    RegisterRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        password:
+          type: string
+        city:
+          type: string
+      required: [name, phone, password]
+
+    RegisterDriverRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        password:
+          type: string
+        city:
+          type: string
+        workCity:
+          type: string
+        carModel:
+          type: string
+        carColor:
+          type: string
+        carNumber:
+          type: string
+        licenseNumber:
+          type: string
+        experience:
+          type: integer
+      required: [name, phone, password, carModel, carNumber]
+
+    RegisterDriverResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        userId:
+          type: integer
+      required: [message, userId]
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+      required: [token, user]
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        phone:
+          type: string
+        role:
+          type: string
+          enum: [passenger, driver, admin]
+        city:
+          type: string
+          nullable: true
+        rating:
+          type: number
+          nullable: true
+        totalRides:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, name, phone, role]
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        city:
+          type: string
+
+    Driver:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        name:
+          type: string
+        phone:
+          type: string
+        city:
+          type: string
+        workCity:
+          type: string
+          nullable: true
+        carModel:
+          type: string
+        carColor:
+          type: string
+          nullable: true
+        carNumber:
+          type: string
+        licenseNumber:
+          type: string
+          nullable: true
+        experience:
+          type: integer
+          nullable: true
+        status:
+          type: string
+          enum: [online, offline, busy]
+        rating:
+          type: number
+          nullable: true
+        totalRides:
+          type: integer
+          nullable: true
+        balance:
+          type: number
+          nullable: true
+        tariffId:
+          type: integer
+          nullable: true
+        tariffName:
+          type: string
+          nullable: true
+        isApproved:
+          type: boolean
+          nullable: true
+        isBlocked:
+          type: boolean
+          nullable: true
+        autoAssign:
+          type: boolean
+          nullable: true
+        rejectionReason:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, userId, name, phone, city, carModel, carNumber, status]
+
+    CreateDriverRequest:
+      type: object
+      properties:
+        userId:
+          type: integer
+        carModel:
+          type: string
+        carColor:
+          type: string
+        carNumber:
+          type: string
+        city:
+          type: string
+        workCity:
+          type: string
+        tariffId:
+          type: integer
+        licenseNumber:
+          type: string
+        experience:
+          type: integer
+      required: [userId, carModel, carNumber, city]
+
+    UpdateDriverRequest:
+      type: object
+      properties:
+        carModel:
+          type: string
+        carColor:
+          type: string
+        carNumber:
+          type: string
+        city:
+          type: string
+        workCity:
+          type: string
+        tariffId:
+          type: integer
+        isApproved:
+          type: boolean
+        isBlocked:
+          type: boolean
+        autoAssign:
+          type: boolean
+        balance:
+          type: number
+        licenseNumber:
+          type: string
+        experience:
+          type: integer
+        rejectionReason:
+          type: string
+
+    DriverStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [online, offline, busy]
+      required: [status]
+
+    BlockDriverRequest:
+      type: object
+      properties:
+        isBlocked:
+          type: boolean
+      required: [isBlocked]
+
+    ApproveDriverRequest:
+      type: object
+      properties:
+        isApproved:
+          type: boolean
+        rejectionReason:
+          type: string
+      required: [isApproved]
+
+    Order:
+      type: object
+      properties:
+        id:
+          type: integer
+        passengerId:
+          type: integer
+        passengerName:
+          type: string
+        passengerPhone:
+          type: string
+        driverId:
+          type: integer
+          nullable: true
+        driverName:
+          type: string
+          nullable: true
+        driverPhone:
+          type: string
+          nullable: true
+        driverCar:
+          type: string
+          nullable: true
+        driverCarNumber:
+          type: string
+          nullable: true
+        city:
+          type: string
+        fromAddress:
+          type: string
+        toAddress:
+          type: string
+        status:
+          type: string
+          enum: [pending, accepted, in_progress, completed, cancelled]
+        price:
+          type: number
+          nullable: true
+        distance:
+          type: number
+          nullable: true
+        tariffName:
+          type: string
+          nullable: true
+        comment:
+          type: string
+          nullable: true
+        rating:
+          type: integer
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+          nullable: true
+        acceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+      required: [id, passengerId, city, fromAddress, toAddress, status]
+
+    RateOrderRequest:
+      type: object
+      properties:
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+      required: [rating]
+
+    CreateOrderRequest:
+      type: object
+      properties:
+        passengerId:
+          type: integer
+        city:
+          type: string
+        fromAddress:
+          type: string
+        toAddress:
+          type: string
+        tariffId:
+          type: integer
+        comment:
+          type: string
+      required: [passengerId, city, fromAddress, toAddress]
+
+    UpdateOrderRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, accepted, in_progress, completed, cancelled]
+        driverId:
+          type: integer
+        rating:
+          type: integer
+        price:
+          type: number
+
+    Stats:
+      type: object
+      properties:
+        totalOrders:
+          type: integer
+        ordersToday:
+          type: integer
+        activeDrivers:
+          type: integer
+        totalDrivers:
+          type: integer
+        totalPassengers:
+          type: integer
+        revenue:
+          type: number
+        revenueToday:
+          type: number
+        completedOrders:
+          type: integer
+        cancelledOrders:
+          type: integer
+        pendingOrders:
+          type: integer
+        avgRating:
+          type: number
+      required: [totalOrders, ordersToday, activeDrivers, totalDrivers, totalPassengers, revenue, revenueToday]
+
+    CityStats:
+      type: object
+      properties:
+        city:
+          type: string
+        ordersToday:
+          type: integer
+        totalOrders:
+          type: integer
+        driversOnline:
+          type: integer
+        totalDrivers:
+          type: integer
+      required: [city, ordersToday, totalOrders, driversOnline, totalDrivers]
+
+    Tariff:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        basePrice:
+          type: number
+        pricePerKm:
+          type: number
+        minPrice:
+          type: number
+        isActive:
+          type: boolean
+          nullable: true
+        tier1MaxKm:
+          type: number
+          nullable: true
+        tier1PricePerKm:
+          type: number
+          nullable: true
+        tier2MaxKm:
+          type: number
+          nullable: true
+        tier2PricePerKm:
+          type: number
+          nullable: true
+        tier3MaxKm:
+          type: number
+          nullable: true
+        tier3PricePerKm:
+          type: number
+          nullable: true
+      required: [id, name, basePrice, pricePerKm, minPrice]
+
+    TariffOption:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        price:
+          type: number
+        isActive:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, price, isActive, createdAt]
+
+    CreateTariffOptionRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        isActive:
+          type: boolean
+      required: [name, price]
+
+    UpdateTariffOptionRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        isActive:
+          type: boolean
+
+    CreateTariffRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        basePrice:
+          type: number
+        pricePerKm:
+          type: number
+        minPrice:
+          type: number
+        isActive:
+          type: boolean
+        tier1MaxKm:
+          type: number
+        tier1PricePerKm:
+          type: number
+        tier2MaxKm:
+          type: number
+        tier2PricePerKm:
+          type: number
+        tier3MaxKm:
+          type: number
+        tier3PricePerKm:
+          type: number
+      required: [name, basePrice, pricePerKm, minPrice]
+
+    City:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        region:
+          type: string
+      required: [id, name, region]
+
+    EstimateRequest:
+      type: object
+      properties:
+        city:
+          type: string
+        fromAddress:
+          type: string
+        toAddress:
+          type: string
+        tariffId:
+          type: integer
+      required: [city, fromAddress, toAddress]
+
+    EstimateResponse:
+      type: object
+      properties:
+        estimatedPrice:
+          type: number
+        estimatedDistance:
+          type: number
+        estimatedDuration:
+          type: integer
+        tariffName:
+          type: string
+          nullable: true
+      required: [estimatedPrice, estimatedDistance, estimatedDuration]
+
+    DeleteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+      required: [success]
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        orderId:
+          type: integer
+        senderId:
+          type: integer
+        senderName:
+          type: string
+        senderRole:
+          type: string
+          enum: [passenger, driver]
+        message:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, orderId, senderId, senderName, senderRole, message, createdAt]
+
+    SendMessageRequest:
+      type: object
+      properties:
+        senderId:
+          type: integer
+        senderRole:
+          type: string
+          enum: [passenger, driver]
+        message:
+          type: string
+      required: [senderId, senderRole, message]
+
+    SupportMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        userId:
+          type: integer
+        userRole:
+          type: string
+        message:
+          type: string
+        isFromSupport:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, userId, userRole, message, isFromSupport, createdAt]
+
+    SendSupportMessageRequest:
+      type: object
+      properties:
+        userId:
+          type: integer
+        userRole:
+          type: string
+        message:
+          type: string
+        isFromSupport:
+          type: boolean
+      required: [userId, userRole, message]

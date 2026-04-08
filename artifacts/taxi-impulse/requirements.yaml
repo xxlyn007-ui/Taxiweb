@@ -1,0 +1,24 @@
+packages:
+  "framer-motion": "Animations and page transitions for premium feel"
+  "recharts": "Admin dashboard analytics and statistics charts"
+  "date-fns": "Formatting dates and times for order history"
+  "clsx": "Utility for constructing className strings conditionally"
+  "tailwind-merge": "Utility for cleanly merging tailwind classes"
+  "lucide-react": "Beautiful consistent iconography"
+  "@hookform/resolvers": "Zod validation resolver for React Hook Form"
+  "react-hook-form": "Performant flexible extensible forms"
+  "zod": "TypeScript-first schema validation"
+
+images:
+  - path: "artifacts/taxi-impulse/public/images/login-bg.png"
+    description: "Abstract modern sleek dark background with glowing neon purple and vibrant magenta light streaks and geometric shapes, luxury premium tech aesthetic, 8k resolution"
+    aspect_ratio: "16:9"
+  - path: "artifacts/taxi-impulse/public/images/taxi-hero.png"
+    description: "Sleek modern black luxury vehicle speeding through a rainy neon-lit city at night, purple and blue reflections on the wet asphalt, cinematic lighting"
+    aspect_ratio: "16:9"
+
+notes:
+  - Using generated API hooks from @workspace/api-client-react
+  - Token stored in localStorage as 'taxi_token'
+  - Standard JWT Auth assumed via headers
+  - UI styled with dark mode luxurious purple aesthetic

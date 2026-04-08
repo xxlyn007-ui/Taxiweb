@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "fOhs4j9PLn9kmDEU49hCG"
+uri = "file://artifacts/taxi-impulse/public/taxi-impulse.zip"
+type = "unspecified"
+title = "TAXI IMPULSE — исходный код"

@@ -1,0 +1,46 @@
+import { Router, type IRouter } from "express";
+import healthRouter from "./health";
+import authRouter from "./auth";
+import citiesRouter from "./cities";
+import tariffsRouter from "./tariffs";
+import tariffOptionsRouter from "./tariff-options";
+import cityTariffOverridesRouter from "./city-tariff-overrides";
+import driversRouter from "./drivers";
+import usersRouter from "./users";
+import ordersRouter from "./orders";
+import statsRouter from "./stats";
+import chatRouter from "./chat";
+import supportRouter from "./support";
+import pushRouter from "./push";
+import subscriptionsRouter from "./subscriptions";
+import settingsRouter from "./settings";
+import notificationsRouter from "./notifications";
+import geocodeRouter from "./geocode";
+import ridesharesRouter from "./rideshares";
+import maintenanceRouter from "./maintenance";
+import referralRouter from "./referral";
+
+const router: IRouter = Router();
+
+router.use(geocodeRouter);
+router.use(healthRouter);
+router.use(authRouter);
+router.use(citiesRouter);
+router.use(tariffsRouter);
+router.use(tariffOptionsRouter);
+router.use(cityTariffOverridesRouter);
+router.use(driversRouter);
+router.use(usersRouter);
+router.use(ordersRouter);
+router.use(statsRouter);
+router.use(chatRouter);
+router.use(supportRouter);
+router.use(pushRouter);
+router.use(subscriptionsRouter);
+router.use(settingsRouter);
+router.use(notificationsRouter);
+router.use(ridesharesRouter);
+router.use(maintenanceRouter);
+router.use(referralRouter);
+
+export default router;
