@@ -87,7 +87,8 @@ class ErrorBoundary extends Component<{ children: ReactNode }, EBState> {
 function RootRedirect() {
   const { user } = useAuth();
   if (!user) return <Redirect to="/login" />;
-  if (user.role === "admin") return <Redirect to="/admin" />;
+  if (user.role === "admin" || user.role === "city_admin") return <Redirect to="/admin" />;
+  if (user.role === "delivery_admin") return <Redirect to="/admin/delivery-orders" />;
   if (user.role === "driver") return <Redirect to="/driver" />;
   return <Redirect to="/passenger" />;
 }

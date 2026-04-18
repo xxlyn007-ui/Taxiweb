@@ -37,7 +37,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {}
     setToken(newToken);
     setUser(newUser);
-    if (newUser.role === "admin") setLocation("/admin");
+    if (newUser.role === "admin" || newUser.role === "city_admin") setLocation("/admin");
+    else if (newUser.role === "delivery_admin") setLocation("/admin/delivery-orders");
     else if (newUser.role === "driver") setLocation("/driver");
     else setLocation("/passenger");
   };
