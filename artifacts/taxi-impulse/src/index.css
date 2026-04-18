@@ -111,7 +111,6 @@
   }
   body {
     @apply font-sans antialiased bg-background text-foreground;
-    /* Force dark mode styling globally for this app's aesthetic */
     color-scheme: dark;
   }
   h1, h2, h3, h4, h5, h6 {
@@ -141,4 +140,182 @@
     content: ""; pointer-events: none; position: absolute; inset: 0px; border-radius: inherit; z-index: 999;
   }
   .active-elevate-2:active:not(.no-default-active-elevate)::after { background-color: var(--elevate-2); }
+}
+
+/* ─── Light theme overrides ─────────────────────────────────────────────── */
+.theme-light {
+  --background: 250 30% 96%;
+  --foreground: 260 25% 12%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 260 25% 12%;
+  --card-border: 250 20% 88%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 260 25% 12%;
+  --popover-border: 250 20% 88%;
+
+  --primary: 270 85% 55%;
+  --primary-foreground: 0 0% 100%;
+
+  --secondary: 250 20% 90%;
+  --secondary-foreground: 260 25% 12%;
+
+  --muted: 250 15% 92%;
+  --muted-foreground: 260 10% 40%;
+
+  --accent: 280 85% 55%;
+  --accent-foreground: 0 0% 100%;
+
+  --destructive: 0 84% 55%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 250 20% 86%;
+  --input: 250 20% 92%;
+  --ring: 270 85% 55%;
+
+  --sidebar: 250 20% 94%;
+  --sidebar-foreground: 260 25% 12%;
+  --sidebar-border: 250 20% 85%;
+  --sidebar-primary: 270 85% 55%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 250 20% 88%;
+  --sidebar-accent-foreground: 260 25% 12%;
+  --sidebar-ring: 270 85% 55%;
+
+  --elevate-1: rgba(0, 0, 0, 0.03);
+  --elevate-2: rgba(0, 0, 0, 0.06);
+
+  color-scheme: light !important;
+}
+
+.theme-light,
+.theme-light body {
+  background-color: hsl(250, 30%, 96%) !important;
+  color: hsl(260, 25%, 12%) !important;
+  color-scheme: light !important;
+}
+
+/* ─── Override hardcoded dark hex backgrounds (catches all opacity variants) ── */
+/* Using attribute selector [class*=] to match bg-[#xxx]/90, bg-[#xxx]/80 etc */
+.theme-light [class*="bg-[#07070f]"],
+.theme-light [class*="bg-[#0a0a14]"],
+.theme-light [class*="bg-[#0d0d1f]"],
+.theme-light [class*="bg-[#0f0f1a]"],
+.theme-light [class*="bg-[#080812]"],
+.theme-light [class*="bg-[#0c0c18]"] {
+  background-color: hsl(250, 20%, 94%) !important;
+}
+.theme-light [class*="bg-[#1a1025]"],
+.theme-light [class*="bg-[#1a1a2e]"],
+.theme-light [class*="bg-[#12121e]"] {
+  background-color: hsl(0, 0%, 100%) !important;
+}
+.theme-light [class*="border-[#0d0d1f]"],
+.theme-light [class*="border-[#07070f]"] {
+  border-color: hsl(250, 20%, 86%) !important;
+}
+
+/* ─── Override white opacity backgrounds ─────────────────────────────────── */
+.theme-light .bg-white\/\[0\.02\],
+.theme-light .bg-white\/\[0\.03\],
+.theme-light .bg-white\/\[0\.04\],
+.theme-light .bg-white\/\[0\.05\],
+.theme-light .bg-white\/\[0\.06\],
+.theme-light .bg-white\/\[0\.07\],
+.theme-light .bg-white\/\[0\.08\],
+.theme-light .bg-white\/\[0\.10\],
+.theme-light .bg-white\/5,
+.theme-light .bg-white\/10 {
+  background-color: hsl(250, 15%, 92%) !important;
+}
+.theme-light .hover\:bg-white\/\[0\.03\]:hover,
+.theme-light .hover\:bg-white\/\[0\.05\]:hover,
+.theme-light .hover\:bg-white\/\[0\.08\]:hover,
+.theme-light .hover\:bg-white\/\[0\.10\]:hover,
+.theme-light .hover\:bg-white\/\[0\.15\]:hover {
+  background-color: hsl(250, 20%, 88%) !important;
+}
+
+/* ─── Override white opacity borders ─────────────────────────────────────── */
+.theme-light .border-white\/\[0\.04\],
+.theme-light .border-white\/\[0\.05\],
+.theme-light .border-white\/\[0\.06\],
+.theme-light .border-white\/\[0\.08\],
+.theme-light .border-white\/\[0\.10\],
+.theme-light .border-white\/\[0\.12\],
+.theme-light .border-white\/\[0\.15\],
+.theme-light .border-white\/5,
+.theme-light .border-white\/10,
+.theme-light .border-white\/15 {
+  border-color: hsl(250, 20%, 86%) !important;
+}
+
+/* ─── Override white text (кроме текста на цветных кнопках/бейджах) ────────── */
+/* text-white → тёмный, НО НЕ на элементах с цветным фоном */
+.theme-light .text-white:not([class*="bg-violet"]):not([class*="bg-emerald"]):not([class*="bg-red"]):not([class*="bg-amber"]):not([class*="bg-green"]):not([class*="bg-blue"]):not([class*="bg-indigo"]) {
+  color: hsl(260, 25%, 12%) !important;
+}
+/* Явно белый текст на цветных фонах */
+.theme-light [class*="bg-violet-6"].text-white,
+.theme-light [class*="bg-violet-5"].text-white,
+.theme-light [class*="bg-emerald-"].text-white,
+.theme-light [class*="bg-red-5"].text-white,
+.theme-light [class*="bg-amber-5"].text-white,
+.theme-light [class*="bg-green-5"].text-white,
+.theme-light [class*="bg-blue-6"].text-white,
+.theme-light [class*="bg-indigo-"].text-white {
+  color: #ffffff !important;
+}
+
+.theme-light .text-white\/10,
+.theme-light .text-white\/15,
+.theme-light .text-white\/20,
+.theme-light .text-white\/25,
+.theme-light .text-white\/30,
+.theme-light .text-white\/40,
+.theme-light .text-white\/50,
+.theme-light .text-white\/60,
+.theme-light .text-white\/70,
+.theme-light .text-white\/80 {
+  color: hsl(260, 10%, 40%) !important;
+}
+
+/* ─── Inputs in light mode ────────────────────────────────────────────────── */
+.theme-light input,
+.theme-light textarea,
+.theme-light select {
+  background-color: hsl(0, 0%, 100%) !important;
+  color: hsl(260, 25%, 12%) !important;
+  border-color: hsl(250, 20%, 86%) !important;
+}
+.theme-light input::placeholder,
+.theme-light textarea::placeholder {
+  color: hsl(260, 10%, 60%) !important;
+}
+
+/* ─── Violet/purple tinted surfaces in light mode ────────────────────────── */
+.theme-light .bg-violet-600\/10,
+.theme-light .bg-violet-600\/20,
+.theme-light .bg-violet-600\/30 {
+  background-color: hsl(270, 85%, 55%, 0.12) !important;
+}
+.theme-light .bg-violet-500\/10,
+.theme-light .bg-violet-500\/20 {
+  background-color: hsl(270, 85%, 55%, 0.10) !important;
+}
+
+/* ─── Sidebar/nav in light mode ──────────────────────────────────────────── */
+.theme-light nav,
+.theme-light [class*="sidebar"],
+.theme-light [class*="bottom-nav"] {
+  background-color: hsl(250, 20%, 94%) !important;
+  border-color: hsl(250, 20%, 85%) !important;
+}
+
+/* ─── Backdrop/overlay in light mode ─────────────────────────────────────── */
+.theme-light .bg-black\/70,
+.theme-light .bg-black\/80,
+.theme-light .bg-black\/90 {
+  background-color: rgba(200, 195, 220, 0.75) !important;
 }

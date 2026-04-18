@@ -27,9 +27,12 @@ export default function AvailableOrders() {
   const activeTariffIds: number[] = (myProfile as any)?.activeTariffIds || [];
   const approvedTariffIds: number[] = (myProfile as any)?.approvedTariffIds || [];
 
+  const orderMode: string = (myProfile as any)?.orderMode ?? "all";
   const { data: orders, isLoading } = useOrdersQuery({ status: 'pending' }, 15000);
   const availableOrders = orders?.filter(o => {
     if (o.city !== workCity) return false;
+    if (orderMode === "taxi" && (o as any).orderType !== "taxi") return false;
+    if (orderMode === "delivery" && (o as any).orderType !== "delivery") return false;
     // If driver has selected specific active tariff classes, only show matching orders
     if (activeTariffIds.length > 0) {
       return o.tariffId ? activeTariffIds.includes(o.tariffId) : true;

@@ -29,6 +29,7 @@ export const driversTable = pgTable("drivers", {
   driverLon: real("driver_lon"),
   locationUpdatedAt: timestamp("location_updated_at", { withTimezone: true }),
   bonusBalance: real("bonus_balance").notNull().default(0),
+  orderMode: text("order_mode").notNull().default("all"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   statusIdx: index("drivers_status_idx").on(table.status),

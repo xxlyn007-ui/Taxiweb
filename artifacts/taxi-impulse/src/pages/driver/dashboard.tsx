@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from "react";
+import { Link } from "wouter";
 import { MainLayout } from "@/components/layout/main-layout";
 import { useAuth } from "@/hooks/use-auth";
 import { useDriversQuery, useUpdateDriverStatusMutation, useUpdateDriverMutation } from "@/hooks/use-drivers";
 import { useOrdersQuery, useUpdateOrderMutation } from "@/hooks/use-orders";
 import { useCitiesQuery, useTariffsQuery } from "@/hooks/use-admin";
 import { useAuthHeaders } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
 import { useDriverSubscriptionQuery, useCreatePaymentMutation, useConfirmPaymentMutation } from "@/hooks/use-subscriptions";
 import { formatMoney } from "@/lib/utils";
@@ -14,7 +16,7 @@ import { SupportChat } from "@/components/support/support-chat";
 import {
   Power, Zap, Phone, MapPin, ChevronRight, Star, Wallet,
   Check, X, MessageCircle, Car, Headphones, ChevronDown, Navigation,
-  CreditCard, Clock, AlertTriangle, CheckCircle
+  CreditCard, Clock, AlertTriangle, CheckCircle, Package, Truck
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
@@ -30,17 +32,36 @@ export default function DriverDashboard() {
   const [showChat, setShowChat] = useState(false);
   const [showSupport, setShowSupport] = useState(false);
   const [showTariffPicker, setShowTariffPicker] = useState(false);
+  const [showBonusWithdraw, setShowBonusWithdraw] = useState(false);
+  const [orderModeLoading, setOrderModeLoading] = useState(false);
   const [geoEnabled, setGeoEnabled] = useState(false);
+  const [arrived, setArrived] = useState(false);
+  const [arrivalSent, setArrivalSent] = useState(false);
+  const [withdrawCardOrPhone, setWithdrawCardOrPhone] = useState("");
+  const [withdrawBank, setWithdrawBank] = useState("");
+  const [withdrawing, setWithdrawing] = useState(false);
   const locationIntervalRef = useRef<any>(null);
 
   const { data: drivers, isLoading } = useDriversQuery();
   const { data: cities } = useCitiesQuery();
   const { data: tariffs } = useTariffsQuery();
   const myProfile = drivers?.find(d => d.userId === user?.id);
+  const orderMode: string = (myProfile as any)?.orderMode ?? "all";
 
   const updateStatus = useUpdateDriverStatusMutation();
   const updateDriver = useUpdateDriverMutation();
   const updateOrder = useUpdateOrderMutation();
+
+  const { data: bonusData, refetch: refetchBonus } = useQuery({
+    queryKey: ["/api/driver-bonus", myProfile?.id],
+    enabled: !!myProfile?.id,
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/driver-bonus/${myProfile!.id}`, { headers: authHeaders.headers });
+      if (!r.ok) return null;
+      return r.json() as Promise<{ bonusBalance: number; requests: Array<{ id: number; amount: number; cardOrPhone: string; bank: string; status: string; createdAt: string }> }>;
+    },
+    staleTime: 30_000,
+  });
 
   const isOnline = myProfile?.status === 'online' || myProfile?.status === 'busy';
   const workCity = myProfile?.workCity || myProfile?.city || 'Не указан';
@@ -51,6 +72,12 @@ export default function DriverDashboard() {
     isOnline ? 8000 : undefined,
   );
   const activeOrder = orders?.find(o => ['accepted', 'in_progress'].includes(o.status));
+
+  // Сбрасываем "Я на месте" при смене заказа
+  useEffect(() => {
+    setArrived(false);
+    setArrivalSent(false);
+  }, [activeOrder?.id]);
 
   usePushNotifications(user?.id, 'driver', workCity !== 'Не указан' ? workCity : undefined);
 
@@ -97,7 +124,9 @@ export default function DriverDashboard() {
   const activeTariffIds: number[] = (myProfile as any)?.activeTariffIds || [];
   const approvedTariffs = Array.isArray(tariffs) ? tariffs.filter(t => approvedTariffIds.includes(t.id)) : [];
 
-  const sendLocation = (lat: number, lon: number) => {
+  // Используем ref чтобы всегда иметь актуальные authHeaders в интервале (фикс stale closure)
+  const sendLocationRef = useRef<(lat: number, lon: number) => void>(() => {});
+  sendLocationRef.current = (lat: number, lon: number) => {
     if (!myProfile?.id) return;
     fetch(`${BASE}/api/drivers/${myProfile.id}/location`, {
       method: "PATCH",
@@ -118,7 +147,7 @@ export default function DriverDashboard() {
       navigator.geolocation.getCurrentPosition(
         pos => {
           setGeoEnabled(true);
-          sendLocation(pos.coords.latitude, pos.coords.longitude);
+          sendLocationRef.current(pos.coords.latitude, pos.coords.longitude);
         },
         () => setGeoEnabled(false),
         { enableHighAccuracy: true, timeout: 5000 },
@@ -137,6 +166,17 @@ export default function DriverDashboard() {
       await updateStatus.mutateAsync({ id: myProfile.id, data: { status: next } });
       queryClient.invalidateQueries({ queryKey: ['/api/orders'] });
     } catch { toast({ title: "Ошибка", variant: "destructive" }); }
+  };
+
+  const changeOrderMode = async (mode: string) => {
+    if (!myProfile) return;
+    setOrderModeLoading(true);
+    try {
+      await updateDriver.mutateAsync({ id: myProfile.id, data: { orderMode: mode } as any });
+      const labels: Record<string, string> = { taxi: "Только такси", delivery: "Только доставка", all: "Все заказы" };
+      toast({ title: `Режим: ${labels[mode] || mode}` });
+    } catch { toast({ title: "Ошибка", variant: "destructive" }); }
+    finally { setOrderModeLoading(false); }
   };
 
   const toggleAutoAssign = async () => {
@@ -166,10 +206,58 @@ export default function DriverDashboard() {
     } catch { toast({ title: "Ошибка", variant: "destructive" }); }
   };
 
+  const notifyArrived = async () => {
+    if (!activeOrder) return;
+    try {
+      await fetch(`${BASE}/api/orders/${activeOrder.id}/notify-arrived`, {
+        method: "POST",
+        headers: authHeaders.headers,
+      });
+      setArrived(true);
+      setArrivalSent(true);
+      toast({ title: "Пассажир уведомлён!", description: "Ждите пассажира" });
+    } catch {
+      toast({ title: "Ошибка уведомления", variant: "destructive" });
+    }
+  };
+
   const startTrip = async () => {
     if (!activeOrder) return;
     try { await updateOrder.mutateAsync({ id: activeOrder.id, data: { status: 'in_progress' } }); }
     catch { toast({ title: "Ошибка", variant: "destructive" }); }
+  };
+
+  const handleWithdrawBonus = async () => {
+    if (!myProfile) return;
+    if (!withdrawCardOrPhone.trim()) {
+      toast({ title: "Укажите номер карты или телефон", variant: "destructive" });
+      return;
+    }
+    if (!withdrawBank.trim()) {
+      toast({ title: "Укажите банк", variant: "destructive" });
+      return;
+    }
+    setWithdrawing(true);
+    try {
+      const r = await fetch(`${BASE}/api/driver-bonus/${myProfile.id}/request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders.headers },
+        body: JSON.stringify({
+          cardOrPhone: withdrawCardOrPhone.trim(),
+          bank: withdrawBank.trim(),
+        }),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.error || "Ошибка"); }
+      toast({ title: "Заявка отправлена!", description: "Администратор рассмотрит и переведёт средства" });
+      setShowBonusWithdraw(false);
+      setWithdrawCardOrPhone("");
+      setWithdrawBank("");
+      queryClient.invalidateQueries({ queryKey: ["/api/driver-bonus", myProfile.id] });
+    } catch (e: any) {
+      toast({ title: e.message || "Ошибка", variant: "destructive" });
+    } finally {
+      setWithdrawing(false);
+    }
   };
 
   const completeTrip = async () => {
@@ -227,10 +315,47 @@ export default function DriverDashboard() {
             <div className="flex items-start gap-3">
               <Clock className="w-5 h-5 text-amber-400 mt-0.5 shrink-0" />
               <div className="flex-1">
-                <div className="text-sm font-semibold text-amber-300">Ожидает подтверждения оплаты</div>
-                <div className="text-xs text-amber-400/70 mt-0.5">Платёж обрабатывается. Если уже оплатили — проверьте статус.</div>
+                <div className="text-sm font-semibold text-amber-300">Оплата не завершена</div>
+                <div className="text-xs text-amber-400/70 mt-0.5">
+                  Вы не завершили оплату. Вернитесь к оплате или создайте новый платёж.
+                </div>
               </div>
             </div>
+            <div className="mt-3 flex gap-2">
+              {subscription.paymentUrl && (
+                <a
+                  href={subscription.paymentUrl}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-sm font-semibold transition-all"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  Вернуться к оплате
+                </a>
+              )}
+              <button
+                onClick={handlePay}
+                disabled={createPayment.isPending}
+                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/10 border border-white/[0.08] text-white/70 text-sm font-medium transition-all disabled:opacity-50"
+              >
+                {createPayment.isPending ? "..." : "Новый платёж"}
+              </button>
+            </div>
+            <button
+              onClick={() => {
+                if (!myProfile?.id) return;
+                confirmPayment.mutateAsync(myProfile.id).then(r => {
+                  if (r?.activated) {
+                    toast({ title: "✅ Подписка активирована!", description: "Теперь вы можете принимать заказы" });
+                  } else {
+                    toast({ title: "Оплата не найдена", description: "Попробуйте вернуться к оплате или создать новый платёж", variant: "destructive" });
+                  }
+                  refetchSub();
+                }).catch(() => {});
+              }}
+              disabled={confirmPayment.isPending}
+              className="mt-2 w-full text-xs text-amber-400/60 hover:text-amber-400 text-center py-1 transition-colors disabled:opacity-50"
+            >
+              {confirmPayment.isPending ? "Проверяю..." : "Уже оплатил — проверить статус"}
+            </button>
           </div>
         )}
 
@@ -269,6 +394,32 @@ export default function DriverDashboard() {
               </button>
             )}
           </div>
+        )}
+
+        {/* Accept Orders CTA — green if active order, violet if waiting */}
+        {isOnline && (
+          <Link
+            href="/driver/orders"
+            className={cn(
+              "w-full flex items-center justify-center gap-2 py-3 rounded-2xl font-semibold text-white text-sm transition-all shadow-md block",
+              activeOrder
+                ? "bg-emerald-500 hover:bg-emerald-400 shadow-emerald-500/20"
+                : "bg-violet-600 hover:bg-violet-500 shadow-violet-600/20"
+            )}
+          >
+            {activeOrder ? (
+              <>
+                <Car className="w-4 h-4" />
+                Активный заказ — перейти
+                <div className="w-2 h-2 bg-white rounded-full animate-pulse ml-0.5" />
+              </>
+            ) : (
+              <>
+                <Zap className="w-4 h-4" />
+                Начать принимать заказы
+              </>
+            )}
+          </Link>
         )}
 
         {/* Status card */}
@@ -310,9 +461,9 @@ export default function DriverDashboard() {
             </div>
 
             <div className="flex items-center gap-4">
-              <div className="text-right">
-                <div className="text-xs text-white/30 mb-0.5">Баланс</div>
-                <div className="text-sm font-bold text-emerald-400">{formatMoney(myProfile?.balance || 0)}</div>
+              <div className="text-right cursor-pointer" onClick={() => setShowBonusWithdraw(true)} title="Нажмите для вывода">
+                <div className="text-xs text-white/30 mb-0.5">Бонусы</div>
+                <div className="text-sm font-bold text-emerald-400">{formatMoney(bonusData?.bonusBalance ?? 0)}</div>
               </div>
               <div className="text-right">
                 <div className="text-xs text-white/30 mb-0.5">Рейтинг</div>
@@ -514,9 +665,15 @@ export default function DriverDashboard() {
                   <X className="w-4 h-4" /> Отменить
                 </button>
                 {activeOrder.status === 'accepted' ? (
-                  <button onClick={startTrip} disabled={updateOrder.isPending} className="flex-1 py-3 rounded-2xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-all flex items-center justify-center gap-2">
-                    Начать поездку <ChevronRight className="w-4 h-4" />
-                  </button>
+                  !arrived ? (
+                    <button onClick={notifyArrived} className="flex-1 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-white font-semibold transition-all flex items-center justify-center gap-2">
+                      <MapPin className="w-4 h-4" /> Я на месте
+                    </button>
+                  ) : (
+                    <button onClick={startTrip} disabled={updateOrder.isPending} className="flex-1 py-3 rounded-2xl bg-violet-600 hover:bg-violet-500 text-white font-semibold transition-all flex items-center justify-center gap-2">
+                      Начать поездку <ChevronRight className="w-4 h-4" />
+                    </button>
+                  )
                 ) : (
                   <button onClick={completeTrip} disabled={updateOrder.isPending} className="flex-1 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-white font-semibold transition-all flex items-center justify-center gap-2">
                     Завершить <Check className="w-4 h-4" />
@@ -549,6 +706,35 @@ export default function DriverDashboard() {
           </div>
         )}
 
+        {/* Order mode selector */}
+        {myProfile && !subscriptionBlocked && (
+          <div className="bg-[#0d0d1f] border border-white/[0.08] rounded-2xl p-4">
+            <div className="text-xs text-white/40 uppercase tracking-wider mb-3">Принимать заказы</div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { value: "taxi", label: "Такси", icon: Car },
+                { value: "delivery", label: "Доставка", icon: Package },
+                { value: "all", label: "Все", icon: Truck },
+              ].map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  onClick={() => changeOrderMode(value)}
+                  disabled={orderModeLoading}
+                  className={cn(
+                    "flex flex-col items-center gap-2 py-3.5 rounded-xl text-xs font-semibold transition-all border",
+                    orderMode === value
+                      ? "bg-violet-600 border-violet-500 text-white shadow-lg shadow-violet-600/25"
+                      : "bg-white/[0.04] border-white/[0.06] text-white/40 hover:bg-white/[0.08] hover:text-white/60"
+                  )}
+                >
+                  <Icon className={cn("w-5 h-5", orderMode === value ? "text-white" : "text-white/30")} />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-[#0d0d1f] border border-white/[0.08] rounded-2xl p-4">
             <div className="flex items-center gap-1.5 mb-2"><Wallet className="w-3.5 h-3.5 text-white/30" /><span className="text-xs text-white/30">Поездок</span></div>
@@ -564,6 +750,94 @@ export default function DriverDashboard() {
             <div className="text-xs text-white/40 mt-0.5">{myProfile?.carNumber || ''}</div>
           </div>
         </div>
+
+        {/* Bonus balance block — always visible */}
+        {myProfile && (
+          <div className="bg-[#0d0d1f] border border-violet-500/20 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Wallet className="w-3.5 h-3.5 text-violet-400" />
+                  <span className="text-xs text-white/40 uppercase tracking-wider">Бонусный баланс</span>
+                </div>
+                <div className="text-2xl font-bold text-violet-400">
+                  {formatMoney(bonusData?.bonusBalance ?? 0)} ₽
+                </div>
+                <div className="text-xs text-white/30 mt-0.5">Начисляется когда пассажир использует бонусы</div>
+              </div>
+              <button
+                onClick={() => setShowBonusWithdraw(!showBonusWithdraw)}
+                disabled={(bonusData?.bonusBalance ?? 0) <= 0}
+                className="px-3 py-2 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 disabled:opacity-40 text-violet-300 text-sm font-medium transition-all"
+              >
+                Вывести
+              </button>
+            </div>
+
+            {/* Active requests */}
+            {bonusData?.requests && bonusData.requests.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-white/[0.06]">
+                <p className="text-xs text-white/30 uppercase tracking-wider">История заявок</p>
+                {bonusData.requests.slice(0, 3).map(req => (
+                  <div key={req.id} className="flex items-center justify-between bg-white/[0.03] rounded-xl px-3 py-2">
+                    <div>
+                      <p className="text-xs text-white/70">{req.cardOrPhone} · {req.bank}</p>
+                      <p className="text-xs text-white/30">{formatMoney(req.amount)} ₽</p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-lg font-medium ${
+                      req.status === 'paid' ? 'bg-emerald-500/20 text-emerald-400' :
+                      req.status === 'pending' ? 'bg-amber-500/20 text-amber-400' :
+                      'bg-red-500/20 text-red-400'
+                    }`}>
+                      {req.status === 'paid' ? 'Выплачено' : req.status === 'pending' ? 'На рассмотрении' : 'Отклонено'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {showBonusWithdraw && (
+              <div className="space-y-3 border-t border-white/[0.06] pt-3">
+                <p className="text-sm text-white/60">
+                  Сумма к выводу: <span className="text-violet-400 font-semibold">{formatMoney(bonusData?.bonusBalance ?? 0)} ₽</span>
+                </p>
+                <div>
+                  <label className="text-xs text-white/40 uppercase tracking-wider block mb-1.5">Номер карты или телефон</label>
+                  <input
+                    value={withdrawCardOrPhone}
+                    onChange={e => setWithdrawCardOrPhone(e.target.value)}
+                    placeholder="+7 999 123-45-67 или 4276..."
+                    className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl px-3 py-2.5 text-white text-sm placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-white/40 uppercase tracking-wider block mb-1.5">Банк</label>
+                  <input
+                    value={withdrawBank}
+                    onChange={e => setWithdrawBank(e.target.value)}
+                    placeholder="Сбербанк, Тинькофф, ВТБ..."
+                    className="w-full bg-white/[0.05] border border-white/[0.08] rounded-xl px-3 py-2.5 text-white text-sm placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-violet-500/40"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setShowBonusWithdraw(false)}
+                    className="py-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.08] text-white/60 text-sm font-medium transition-all"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    onClick={handleWithdrawBonus}
+                    disabled={withdrawing}
+                    className="py-2.5 rounded-xl bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white text-sm font-semibold transition-all"
+                  >
+                    {withdrawing ? "Отправка..." : "Отправить"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <button
           onClick={() => setShowSupport(true)}

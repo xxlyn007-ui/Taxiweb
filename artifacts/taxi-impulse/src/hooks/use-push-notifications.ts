@@ -13,7 +13,14 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 export function usePushNotifications(userId?: number, role?: string, workCity?: string) {
   const authHeaders = useAuthHeaders();
   const subscribedRef = useRef(false);
+  const endpointRef = useRef<string | null>(null);
+  // Всегда держим актуальные значения через refs (фикс stale closure в async)
+  const authHeadersRef = useRef(authHeaders.headers);
+  authHeadersRef.current = authHeaders.headers;
+  const workCityRef = useRef<string | undefined>(workCity);
+  workCityRef.current = workCity;
 
+  // Первичная подписка
   useEffect(() => {
     if (!userId || !role) return;
     if (subscribedRef.current) return;
@@ -32,21 +39,24 @@ export function usePushNotifications(userId?: number, role?: string, workCity?: 
         if (!publicKey) return;
 
         const existing = await reg.pushManager.getSubscription();
-        if (existing) await existing.unsubscribe();
-
-        const sub = await reg.pushManager.subscribe({
+        const sub = existing || await reg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(publicKey) as unknown as BufferSource,
         });
 
         const subJson = sub.toJSON();
+        endpointRef.current = sub.endpoint;
+        subscribedRef.current = true;
+
+        // Используем workCityRef.current — актуальное значение на момент завершения async операции,
+        // а не то что было в момент запуска эффекта (фикс race condition: workCity мог загрузиться позже)
         await fetch(`${BASE}/api/push/subscribe`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", ...authHeaders.headers },
+          headers: { "Content-Type": "application/json", ...authHeadersRef.current },
           body: JSON.stringify({
             userId,
             role,
-            workCity: workCity || null,
+            workCity: workCityRef.current || null,
             subscription: {
               endpoint: sub.endpoint,
               keys: {
@@ -56,11 +66,21 @@ export function usePushNotifications(userId?: number, role?: string, workCity?: 
             },
           }),
         });
-        subscribedRef.current = true;
       } catch {
       }
     };
 
     subscribe();
-  }, [userId, role, workCity]);
+  }, [userId, role]);
+
+  // Обновляем workCity на сервере при изменении города
+  // Срабатывает когда workCity изменяется ПОСЛЕ завершения подписки
+  useEffect(() => {
+    if (!subscribedRef.current || !endpointRef.current || !userId) return;
+    fetch(`${BASE}/api/push/update-city`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...authHeadersRef.current },
+      body: JSON.stringify({ endpoint: endpointRef.current, workCity: workCity || null }),
+    }).catch(() => {});
+  }, [workCity, userId]);
 }

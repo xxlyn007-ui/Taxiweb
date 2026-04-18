@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { db, driverSubscriptionsTable, driversTable, usersTable, settingsTable, ridesharesTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, inArray } from "drizzle-orm";
 import { sendPushToUser } from "../push";
 import crypto from "crypto";
 
@@ -192,24 +192,38 @@ router.post("/subscriptions/pay/:driverId", async (req, res): Promise<void> => {
 });
 
 // ── POST вебхук от ЮКассы ────────────────────────────────────────────────────
+// Верифицируем платёж через API ЮКассы — не доверяем только телу вебхука
+async function getVerifiedPayment(paymentId: string): Promise<any | null> {
+  try {
+    const data = await yookassaRequest("GET", `/payments/${paymentId}`);
+    return data || null;
+  } catch {
+    return null;
+  }
+}
+
 router.post("/payments/yookassa/webhook", async (req, res): Promise<void> => {
   const { type, object } = req.body || {};
   res.json({ ok: true });
 
-  if (type !== "notification" || !object) return;
+  if (type !== "notification" || !object?.id) return;
 
-  const paymentId = object.id;
-  const meta = object.metadata || {};
+  // Перепроверяем статус через API — игнорируем если не подтвердилось
+  const verified = await getVerifiedPayment(object.id);
+  if (!verified) return;
+
+  const paymentId = verified.id;
+  const meta = verified.metadata || {};
 
   // Обработка платежа за попутку
   if (meta.type === "rideshare_post" && meta.rideshareId) {
     const rideshareId = parseInt(meta.rideshareId);
     if (!isNaN(rideshareId)) {
-      if (object.status === "succeeded") {
+      if (verified.status === "succeeded") {
         await db.update(ridesharesTable)
           .set({ status: "active", paymentStatus: "paid", paymentId })
           .where(eq(ridesharesTable.id, rideshareId));
-      } else if (object.status === "canceled") {
+      } else if (verified.status === "canceled") {
         await db.delete(ridesharesTable).where(eq(ridesharesTable.id, rideshareId));
       }
     }
@@ -219,7 +233,7 @@ router.post("/payments/yookassa/webhook", async (req, res): Promise<void> => {
   const driverId = parseInt(meta.driverId);
   if (!paymentId || isNaN(driverId)) return;
 
-  if (object.status === "succeeded") {
+  if (verified.status === "succeeded") {
     const [sub] = await db.select().from(driverSubscriptionsTable)
       .where(eq(driverSubscriptionsTable.driverId, driverId))
       .orderBy(desc(driverSubscriptionsTable.createdAt)).limit(1);
@@ -230,13 +244,13 @@ router.post("/payments/yookassa/webhook", async (req, res): Promise<void> => {
         ? new Date(sub.endDate) : now;
       const endDate = addDays(prevEnd, 30);
 
-      const paymentMethodId = object.payment_method?.id ?? null;
+      const paymentMethodId = verified.payment_method?.id ?? null;
       await db.update(driverSubscriptionsTable).set({
         status: "active",
         startDate: now,
         endDate,
         paymentId,
-        amount: object.amount?.value ? parseFloat(object.amount.value) : sub.amount,
+        amount: verified.amount?.value ? parseFloat(verified.amount.value) : sub.amount,
         ...(paymentMethodId ? { paymentMethodId, autoRenew: true, lastAutoChargeAt: now } : {}),
       }).where(eq(driverSubscriptionsTable.id, sub.id));
 
@@ -250,7 +264,7 @@ router.post("/payments/yookassa/webhook", async (req, res): Promise<void> => {
         }).catch(() => {});
       }
     }
-  } else if (object.status === "canceled") {
+  } else if (verified.status === "canceled") {
     const [sub] = await db.select().from(driverSubscriptionsTable)
       .where(eq(driverSubscriptionsTable.driverId, driverId))
       .orderBy(desc(driverSubscriptionsTable.createdAt)).limit(1);
@@ -311,19 +325,35 @@ router.get("/subscriptions", async (_req, res): Promise<void> => {
   const subs = await db.select().from(driverSubscriptionsTable)
     .orderBy(desc(driverSubscriptionsTable.createdAt));
 
-  const result = await Promise.all(subs.map(async (sub) => {
-    const [driver] = await db.select().from(driversTable).where(eq(driversTable.id, sub.driverId));
-    let driverName = "Неизвестно";
-    let driverPhone = "";
-    if (driver) {
-      const [u] = await db.select().from(usersTable).where(eq(usersTable.id, driver.userId));
-      driverName = u?.name || "Неизвестно";
-      driverPhone = u?.phone || "";
-    }
+  if (subs.length === 0) { res.json([]); return; }
+
+  // Batch — один запрос на водителей, один на пользователей (без N+1)
+  const driverIds = [...new Set(subs.map(s => s.driverId))];
+  const drivers = await db.select({ id: driversTable.id, userId: driversTable.userId })
+    .from(driversTable).where(inArray(driversTable.id, driverIds));
+
+  const userIds = [...new Set(drivers.map(d => d.userId))];
+  const users = userIds.length > 0
+    ? await db.select({ id: usersTable.id, name: usersTable.name, phone: usersTable.phone })
+        .from(usersTable).where(inArray(usersTable.id, userIds))
+    : [];
+
+  const driverMap = new Map(drivers.map(d => [d.id, d]));
+  const userMap = new Map(users.map(u => [u.id, u]));
+
+  const result = subs.map(sub => {
+    const driver = driverMap.get(sub.driverId);
+    const user = driver ? userMap.get(driver.userId) : undefined;
     const effectiveStatus = computeStatus(sub);
     const daysLeft = Math.max(0, Math.ceil((new Date(sub.endDate).getTime() - Date.now()) / 86400000));
-    return { ...sub, effectiveStatus, daysLeft, driverName, driverPhone };
-  }));
+    return {
+      ...sub,
+      effectiveStatus,
+      daysLeft,
+      driverName: user?.name || "Неизвестно",
+      driverPhone: user?.phone || "",
+    };
+  });
 
   res.json(result);
 });

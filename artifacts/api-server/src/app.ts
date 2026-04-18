@@ -54,8 +54,8 @@ app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: "Маршрут не найден" });
 });
 
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.error("[ERROR]", err?.message || err);
+app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
+  console.error("[ERROR]", err?.message || err, "| path:", req.method, req.path, "| stack:", err?.stack?.split("\n")[1]);
   res.status(500).json({ error: "Внутренняя ошибка сервера" });
 });
 

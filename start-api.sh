@@ -1,8 +1,11 @@
 #!/bin/bash
 set -a
 
-ENV_FILE="/var/www/taxi-impulse/artifacts/api-server/.env"
-[ -f "$ENV_FILE" ] && source "$ENV_FILE"
+# Загружаем переменные из .env (оба возможных расположения)
+for ENV_FILE in   "/var/www/taxi-impulse/artifacts/api-server/.env"   "/var/www/taxi-impulse/.env"
+do
+  [ -f "$ENV_FILE" ] && source "$ENV_FILE"
+done
 
 export NODE_ENV=production
 export PORT=8080

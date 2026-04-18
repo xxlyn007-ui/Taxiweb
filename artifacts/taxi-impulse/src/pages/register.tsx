@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useRegister } from "@workspace/api-client-react";
 import { useAuth } from "@/hooks/use-auth";
-import { Link } from "wouter";
-import { Loader2, Eye, EyeOff, User, Phone, Lock, ShieldCheck } from "lucide-react";
+import { Link, useSearch } from "wouter";
+import { Loader2, Eye, EyeOff, User, Phone, Lock, ShieldCheck, Gift } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -10,6 +10,8 @@ export default function Register() {
   const { login } = useAuth();
   const { toast } = useToast();
   const registerMutation = useRegister();
+  const search = useSearch();
+  const refCode = new URLSearchParams(search).get("ref") || "";
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -38,7 +40,7 @@ export default function Register() {
     }
     setLoading(true);
     try {
-      const res = await registerMutation.mutateAsync({ data: { name, phone, password } });
+      const res = await registerMutation.mutateAsync({ data: { name, phone, password, ...(refCode ? { referralCode: refCode } : {}) } });
       login(res.token, res.user);
       toast({ title: "Добро пожаловать!", description: "Аккаунт создан успешно" });
     } catch (err: any) {
@@ -64,6 +66,16 @@ export default function Register() {
 
         <h2 className="text-2xl font-bold text-white mb-1">Регистрация пассажира</h2>
         <p className="text-white/40 text-sm mb-8">Создайте аккаунт для заказа такси</p>
+
+        {refCode && (
+          <div className="flex items-center gap-2 bg-violet-600/10 border border-violet-500/20 rounded-xl px-3 py-2.5 mb-4">
+            <Gift className="w-4 h-4 text-violet-400 flex-shrink-0" />
+            <div>
+              <div className="text-xs text-violet-300 font-medium">Реферальная ссылка активна</div>
+              <div className="text-xs text-white/40">Код: <span className="font-mono text-violet-300">{refCode}</span> — вы и ваш друг получат бонусы!</div>
+            </div>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

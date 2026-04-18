@@ -58,7 +58,9 @@ export function useConfirmPaymentMutation() {
         method: "POST",
         headers: { "Content-Type": "application/json", ...headers },
       });
-      return res.json();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Ошибка подтверждения платежа");
+      return data;
     },
     onSuccess: (_, driverId) => {
       qc.invalidateQueries({ queryKey: ["subscription", driverId] });

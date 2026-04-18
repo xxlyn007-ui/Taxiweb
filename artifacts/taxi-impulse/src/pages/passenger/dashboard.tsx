@@ -4,7 +4,8 @@ import { Link } from "wouter";
 import { MainLayout } from "@/components/layout/main-layout";
 import { useOrdersQuery, useCreateOrderMutation, useEstimatePriceMutation, useUpdateOrderMutation, useRateOrderMutation } from "@/hooks/use-orders";
 import { useCitiesQuery, useTariffsQuery, useTariffOptionsQuery } from "@/hooks/use-admin";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth, useAuthHeaders } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { usePushNotifications } from "@/hooks/use-push-notifications";
 import { formatMoney } from "@/lib/utils";
@@ -17,7 +18,7 @@ import {
   MapPin, Clock, Car, X, ChevronRight, Loader2,
   Navigation, Phone, MessageCircle, Star, ChevronDown,
   Headphones, UserPlus, ArrowLeftRight, SlidersHorizontal, Check,
-  Package, MessageSquare, UserCircle
+  Package, MessageSquare, UserCircle, Gift, Copy, Wallet, Users2
 } from "lucide-react";
 import { PassengerProfileModal } from "@/components/passenger/profile-modal";
 import { cn } from "@/lib/utils";
@@ -31,13 +32,27 @@ function safeSetLocalStorage(key: string, value: string) {
   try { localStorage?.setItem(key, value); } catch {}
 }
 
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+
 export default function PassengerDashboard() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const authHeaders = useAuthHeaders();
 
   const { data: cities } = useCitiesQuery();
   const { data: tariffs } = useTariffsQuery();
   const { data: orders, isLoading: ordersLoading } = useOrdersQuery({ passengerId: user?.id }, 10000);
+
+  const { data: referralData } = useQuery({
+    queryKey: ["/api/referral/my", user?.id],
+    enabled: !!user?.id,
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/referral/my`, { headers: authHeaders.headers });
+      if (!r.ok) return null;
+      return r.json();
+    },
+    staleTime: 60_000,
+  });
 
   const createOrder = useCreateOrderMutation();
   const estimatePrice = useEstimatePriceMutation();
@@ -69,6 +84,7 @@ export default function PassengerDashboard() {
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [mapPicker, setMapPicker] = useState<'from' | 'to' | null>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [useBonus, setUseBonus] = useState(false);
 
   usePushNotifications(user?.id, 'passenger', city);
 
@@ -187,6 +203,11 @@ export default function PassengerDashboard() {
     }
   };
 
+  const bonusBalance = (referralData as any)?.bonusBalance ?? 0;
+  const maxBonus = estimate ? Math.floor(estimate.price * 0.5 * 100) / 100 : 0;
+  const bonusApplied = useBonus ? Math.min(bonusBalance, maxBonus) : 0;
+  const finalPrice = estimate ? Math.max(0, estimate.price - bonusApplied) : 0;
+
   const handleOrder = async () => {
     try {
       await createOrder.mutateAsync({
@@ -201,10 +222,11 @@ export default function PassengerDashboard() {
           ...(orderMode === 'delivery' && packageDescription.trim() ? { packageDescription: packageDescription.trim() } : {}),
           ...(isIntercity && toCity ? { toCity } : {}),
           ...(selectedOptionIds.length > 0 ? { optionIds: JSON.stringify(selectedOptionIds) } : {}),
+          ...(bonusApplied > 0 ? { bonusUsed: bonusApplied } : {}),
         } as any
       });
       toast({ title: orderMode === 'delivery' ? "Доставка создана!" : "Заказ создан!", description: "Ищем водителя..." });
-      setStep("form"); setEstimate(null); setFrom(""); setTo(""); setComment(""); setPackageDescription("");
+      setStep("form"); setEstimate(null); setFrom(""); setTo(""); setComment(""); setPackageDescription(""); setUseBonus(false);
     } catch {
       toast({ title: "Ошибка создания заказа", variant: "destructive" });
     }
@@ -611,7 +633,12 @@ export default function PassengerDashboard() {
                   <div className="bg-violet-600/10 border border-violet-600/20 rounded-2xl p-4 flex items-center justify-between">
                     <div>
                       <div className="text-xs text-white/40 mb-0.5">Стоимость поездки</div>
-                      <div className="text-2xl font-bold text-white">{formatMoney(estimate.price)}</div>
+                      <div className="text-2xl font-bold text-white">
+                        {bonusApplied > 0 ? formatMoney(finalPrice) : formatMoney(estimate.price)}
+                      </div>
+                      {bonusApplied > 0 && (
+                        <div className="text-xs text-emerald-400 mt-0.5">−{formatMoney(bonusApplied)} бонусами</div>
+                      )}
                       {isIntercity && toCity && (
                         <div className="text-xs text-violet-400/70 mt-0.5">{city} → {toCity}</div>
                       )}
@@ -628,6 +655,32 @@ export default function PassengerDashboard() {
                       </div>
                     </div>
                   </div>
+
+                  {bonusBalance > 0 && maxBonus > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setUseBonus(v => !v)}
+                      className={cn(
+                        "w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all text-sm",
+                        useBonus
+                          ? "bg-emerald-500/10 border-emerald-500/25 text-emerald-300"
+                          : "bg-white/[0.04] border-white/[0.08] text-white/60"
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Gift className="w-4 h-4" />
+                        <span>Использовать бонусы</span>
+                        <span className="text-xs opacity-60">(до {formatMoney(maxBonus)})</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs">{formatMoney(bonusBalance)} доступно</span>
+                        <div className={cn("w-8 h-4 rounded-full transition-colors relative", useBonus ? "bg-emerald-500" : "bg-white/20")}>
+                          <div className={cn("absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all", useBonus ? "left-4" : "left-0.5")} />
+                        </div>
+                      </div>
+                    </button>
+                  )}
+
                   <div className="flex gap-2">
                     <button
                       onClick={() => { setStep("form"); setEstimate(null); }}
@@ -658,7 +711,7 @@ export default function PassengerDashboard() {
         )}
 
         {!activeOrder && (
-          <div className="mb-4">
+          <div className="mb-4 relative z-0">
             <TwoGisMap
               city={city}
               toCity={isIntercity && toCity ? toCity : undefined}
@@ -667,6 +720,27 @@ export default function PassengerDashboard() {
             />
           </div>
         )}
+
+        {/* Referral and bonus — link to dedicated page */}
+        <Link
+          href="/passenger/referral"
+          className="w-full flex items-center gap-3 px-4 py-3.5 bg-[#0d0d1f] border border-violet-500/15 rounded-2xl hover:border-violet-500/30 transition-all mb-3 block"
+        >
+          <div className="w-9 h-9 rounded-xl bg-violet-600/20 flex items-center justify-center flex-shrink-0">
+            <Gift className="w-4 h-4 text-violet-400" />
+          </div>
+          <div className="flex-1 text-left">
+            <div className="text-sm font-semibold text-white">Рефералы и бонусы</div>
+            <div className="text-xs text-white/40">
+              {referralData ? (
+                referralData.bonusBalance > 0
+                  ? `Баланс: ${formatMoney(referralData.bonusBalance)} ₽ · Приглашено: ${referralData.invitedCount ?? 0}`
+                  : "Приглашайте друзей — получайте бонусы"
+              ) : "Приглашайте друзей — получайте бонусы"}
+            </div>
+          </div>
+          <ChevronRight className="w-4 h-4 text-white/20 flex-shrink-0" />
+        </Link>
 
         <button
           onClick={() => setShowProfile(true)}

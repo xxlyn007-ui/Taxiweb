@@ -414,12 +414,15 @@ router.post("/orders", async (req, res): Promise<void> => {
     }
   }
 
-  const distance = await estimateDistance(parsed.data.fromAddress, parsed.data.toAddress, parsed.data.city, (parsed.data as any).toCity);
+  // Читаем rawData из req.body напрямую — Zod strip() убирает неизвестные поля (bonusUsed, toCity, orderType, etc.)
+  const rawData = req.body as any;
+
+  const distance = await estimateDistance(parsed.data.fromAddress, parsed.data.toAddress, parsed.data.city, rawData.toCity);
   if (tariff) {
     price = calculateTieredPrice(distance, tariff);
   }
 
-  const optionIdsRaw = (parsed.data as any).optionIds;
+  const optionIdsRaw = rawData.optionIds;
   let optionIds: number[] = [];
   let optionsExtraPrice = 0;
   if (optionIdsRaw) {
@@ -431,14 +434,12 @@ router.post("/orders", async (req, res): Promise<void> => {
       optionsExtraPrice = opts.reduce((s, o) => s + (o.price || 0), 0);
     }
   }
-
-  const rawData = parsed.data as any;
   const orderType: string = rawData.orderType === 'delivery' ? 'delivery' : 'taxi';
   const commentRaw: string | undefined = rawData.comment;
   const pkgDesc: string | undefined = rawData.packageDescription;
   const totalPrice = price + optionsExtraPrice;
 
-  // Применяем бонусы пассажира (до 50% от стоимости)
+  // Применяем бонусы пассажира (до 50% от стоимости) — в транзакции чтобы бонус не пропал при ошибке
   let bonusUsed = 0;
   const requestedBonus = parseFloat(rawData.bonusUsed ?? rawData.useBonus ?? 0) || 0;
   if (requestedBonus > 0 && parsed.data.passengerId) {
@@ -448,30 +449,34 @@ router.post("/orders", async (req, res): Promise<void> => {
     const maxBonus = Math.floor(totalPrice * 0.5);
     bonusUsed = Math.min(available, maxBonus, requestedBonus, totalPrice - 1);
     bonusUsed = Math.max(0, Math.floor(bonusUsed));
-    if (bonusUsed > 0) {
-      await db.execute(
-        sql`UPDATE users SET bonus_balance = bonus_balance - ${bonusUsed} WHERE id = ${parsed.data.passengerId}`
-      );
-    }
   }
 
-  const [order] = await db.insert(ordersTable).values({
-    passengerId: parsed.data.passengerId,
-    city: sanitizeText(parsed.data.city, 100),
-    toCity: rawData.toCity ? sanitizeText(rawData.toCity, 100) : null,
-    fromAddress: sanitizeText(parsed.data.fromAddress, 300),
-    toAddress: sanitizeText(parsed.data.toAddress, 300),
-    tariffId: parsed.data.tariffId,
-    tariffName: sanitizeText(tariffName, 100),
-    price: totalPrice - bonusUsed,
-    distance,
-    orderType,
-    comment: commentRaw ? sanitizeText(commentRaw, 500) : null,
-    packageDescription: pkgDesc ? sanitizeText(pkgDesc, 500) : null,
-    optionIds: optionIds.length > 0 ? JSON.stringify(optionIds) : null,
-    bonusUsed,
-    status: "pending",
-  }).returning();
+  // Транзакция: списание бонуса + создание заказа атомарно
+  const order = await db.transaction(async (tx) => {
+    if (bonusUsed > 0 && parsed.data.passengerId) {
+      await tx.execute(
+        sql`UPDATE users SET bonus_balance = bonus_balance - ${bonusUsed} WHERE id = ${parsed.data.passengerId} AND bonus_balance >= ${bonusUsed}`
+      );
+    }
+    const [created] = await tx.insert(ordersTable).values({
+      passengerId: parsed.data.passengerId,
+      city: sanitizeText(parsed.data.city, 100),
+      toCity: rawData.toCity ? sanitizeText(rawData.toCity, 100) : null,
+      fromAddress: sanitizeText(parsed.data.fromAddress, 300),
+      toAddress: sanitizeText(parsed.data.toAddress, 300),
+      tariffId: parsed.data.tariffId,
+      tariffName: sanitizeText(tariffName, 100),
+      price: totalPrice - bonusUsed,
+      distance,
+      orderType,
+      comment: commentRaw ? sanitizeText(commentRaw, 500) : null,
+      packageDescription: pkgDesc ? sanitizeText(pkgDesc, 500) : null,
+      optionIds: optionIds.length > 0 ? JSON.stringify(optionIds) : null,
+      bonusUsed,
+      status: "pending",
+    }).returning();
+    return created;
+  });
 
   cleanupPassengerHistory(parsed.data.passengerId).catch(() => {});
 
@@ -481,7 +486,7 @@ router.post("/orders", async (req, res): Promise<void> => {
     body: `${order.city} · ${order.fromAddress} → ${order.toAddress} · ${order.price ? Math.round(order.price) + '₽' : ''}`,
     tag: `order-${order.id}`,
     url: "/driver",
-  }).catch(() => {});
+  }, orderType).catch(() => {});
 
   const enriched = await enrichOrder(order);
   res.status(201).json(enriched);
@@ -564,18 +569,20 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
     updateData.completedAt = new Date();
     const [existingOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, params.data.id));
     const driverIdToUpdate = parsed.data.driverId || existingOrder?.driverId;
-    if (driverIdToUpdate) {
-      const [driver] = await db.select().from(driversTable).where(eq(driversTable.id, driverIdToUpdate));
-      if (driver) {
-        // Начисляем бонус водителю если заказ был с бонусом пассажира
-      const bonusForDriver = existingOrder?.bonusUsed ?? 0;
+    if (driverIdToUpdate && existingOrder) {
+      const bonusForDriver = existingOrder.bonusUsed ?? 0;
+      const orderPrice = existingOrder.price || 0;
+      // Кэшбэк водителю — настраиваемый % от суммы поездки
+      const [drvCashbackSetting] = await db.select().from(settingsTable).where(eq(settingsTable.key, "driver_cashback_percent"));
+      const drvCashbackPct = parseFloat(drvCashbackSetting?.value ?? "0");
+      const driverCashback = drvCashbackPct > 0 ? Math.floor(orderPrice * drvCashbackPct / 100) : 0;
+      // Атомарное обновление — используем SQL-арифметику, без race condition
       await db.update(driversTable).set({
-          totalRides: (driver.totalRides || 0) + 1,
-          status: "online",
-          balance: (driver.balance || 0) + (updateData.price || existingOrder?.price || 0) * 0.8,
-          bonusBalance: (driver.bonusBalance || 0) + bonusForDriver,
-        }).where(eq(driversTable.id, driverIdToUpdate));
-      }
+        totalRides: sql`COALESCE(total_rides, 0) + 1`,
+        status: "online",
+        balance: sql`COALESCE(balance, 0) + ${orderPrice * 0.8}`,
+        bonusBalance: sql`COALESCE(bonus_balance, 0) + ${bonusForDriver + driverCashback}`,
+      }).where(eq(driversTable.id, driverIdToUpdate));
     }
     if (existingOrder) {
       // Кэшбэк пассажиру — процент от стоимости поездки
@@ -630,6 +637,32 @@ router.patch("/orders/:id", async (req, res): Promise<void> => {
 
   const enriched = await enrichOrder(order);
   res.json(UpdateOrderResponse.parse(enriched));
+});
+
+router.post("/orders/:id/notify-arrived", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Неверный ID" }); return; }
+
+  const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
+  if (!order) { res.status(404).json({ error: "Заказ не найден" }); return; }
+
+  let driverName = "Водитель";
+  if (order.driverId) {
+    const [drv] = await db.select().from(driversTable).where(eq(driversTable.id, order.driverId));
+    if (drv) {
+      const [dUser] = await db.select().from(usersTable).where(eq(usersTable.id, drv.userId));
+      driverName = dUser?.name || "Водитель";
+    }
+  }
+
+  sendPushToUser(order.passengerId, {
+    title: "🚗 Машина ожидает!",
+    body: `${driverName} прибыл на место. Выходите!`,
+    tag: `order-arrived-${id}`,
+    url: "/passenger",
+  }).catch(() => {});
+
+  res.json({ ok: true });
 });
 
 router.post("/orders/:id/rate", async (req, res): Promise<void> => {

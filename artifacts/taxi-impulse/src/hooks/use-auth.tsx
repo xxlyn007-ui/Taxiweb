@@ -8,6 +8,7 @@ interface AuthContextType {
   isLoading: false;
   login: (token: string, user: User) => void;
   logout: () => void;
+  updateUser: (partial: Partial<User>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -25,8 +26,6 @@ function readStorage<T>(key: string, parse?: boolean): T | string | null {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Lazy initialisers — читаем localStorage синхронно при первом рендере,
-  // без useEffect и без фазы isLoading:true → нет вспышки чёрного экрана.
   const [user, setUser] = useState<User | null>(() => readStorage<User>("taxi_user", true));
   const [token, setToken] = useState<string | null>(() => readStorage("taxi_token"));
   const [, setLocation] = useLocation();
@@ -53,8 +52,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLocation("/login");
   };
 
+  const updateUser = (partial: Partial<User>) => {
+    setUser(prev => {
+      if (!prev) return prev;
+      const updated = { ...prev, ...partial };
+      try { localStorage.setItem("taxi_user", JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, isLoading: false, login, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading: false, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

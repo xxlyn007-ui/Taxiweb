@@ -91,38 +91,66 @@ router.post("/admin/maintenance/cleanup-rideshares", async (_req, res): Promise<
 
 // POST /admin/maintenance/cleanup-push — удалить push-подписки без пользователей
 router.post("/admin/maintenance/cleanup-push", async (_req, res): Promise<void> => {
-  const allSubs = await db.select({ id: pushSubscriptionsTable.id, userId: pushSubscriptionsTable.userId })
-    .from(pushSubscriptionsTable);
-  if (allSubs.length === 0) { res.json({ deleted: 0, message: "Push-подписок нет" }); return; }
-
-  const userIds = [...new Set(allSubs.map(s => s.userId))];
-  const existingUsers = await db.select({ id: usersTable.id }).from(usersTable)
-    .where(inArray(usersTable.id, userIds));
-  const existingUserIds = new Set(existingUsers.map(u => u.id));
-
-  const toDelete = allSubs.filter(s => !existingUserIds.has(s.userId)).map(s => s.id);
-  if (toDelete.length === 0) { res.json({ deleted: 0, message: "Устаревших подписок не найдено" }); return; }
-
-  await db.delete(pushSubscriptionsTable).where(inArray(pushSubscriptionsTable.id, toDelete));
-  res.json({ deleted: toDelete.length, message: `Удалено ${toDelete.length} устаревших push-подписок` });
+  // Используем SQL-подзапрос вместо загрузки всех записей в память
+  const result = await db.delete(pushSubscriptionsTable).where(
+    sql`user_id NOT IN (SELECT id FROM users)`
+  ).returning({ id: pushSubscriptionsTable.id });
+  const deleted = result.length;
+  res.json({ deleted, message: deleted > 0 ? `Удалено ${deleted} устаревших push-подписок` : "Устаревших подписок не найдено" });
 });
 
-// POST /admin/maintenance/sync-subscriptions — пометить истёкшие подписки
-router.post("/admin/maintenance/sync-subscriptions", async (_req, res): Promise<void> => {
-  const now = new Date();
-  const activeSubs = await db.select().from(driverSubscriptionsTable)
-    .where(or(eq(driverSubscriptionsTable.status, "active"), eq(driverSubscriptionsTable.status, "trial")));
+// POST /admin/maintenance/fix-push-cities — заполнить workCity для водительских подписок с null городом
+router.post("/admin/maintenance/fix-push-cities", async (_req, res): Promise<void> => {
+  // Находим водительские push-подписки без города
+  const broken = await db.select({
+    id: pushSubscriptionsTable.id,
+    userId: pushSubscriptionsTable.userId,
+  }).from(pushSubscriptionsTable)
+    .where(and(
+      eq(pushSubscriptionsTable.role, "driver"),
+      sql`${pushSubscriptionsTable.workCity} IS NULL`,
+    ));
 
-  let updated = 0;
-  for (const sub of activeSubs) {
-    if (new Date(sub.endDate) < now) {
-      await db.update(driverSubscriptionsTable)
-        .set({ status: "expired" })
-        .where(eq(driverSubscriptionsTable.id, sub.id));
-      updated++;
+  if (broken.length === 0) {
+    res.json({ fixed: 0, message: "Все водительские подписки имеют город" });
+    return;
+  }
+
+  // Для каждого пользователя ищем workCity из профиля водителя
+  const userIds = [...new Set(broken.map(s => s.userId))];
+  const driverProfiles = await db
+    .select({ userId: driversTable.userId, workCity: driversTable.workCity })
+    .from(driversTable)
+    .where(inArray(driversTable.userId, userIds));
+
+  const cityByUserId = new Map(driverProfiles.map(d => [d.userId, d.workCity]));
+
+  let fixed = 0;
+  for (const sub of broken) {
+    const city = cityByUserId.get(sub.userId);
+    if (city) {
+      await db.update(pushSubscriptionsTable)
+        .set({ workCity: city })
+        .where(eq(pushSubscriptionsTable.id, sub.id));
+      fixed++;
     }
   }
 
+  res.json({ fixed, total: broken.length, message: `Восстановлен город для ${fixed} из ${broken.length} подписок` });
+});
+
+// POST /admin/maintenance/sync-subscriptions — пометить истёкшие подписки (одним запросом)
+router.post("/admin/maintenance/sync-subscriptions", async (_req, res): Promise<void> => {
+  const now = new Date();
+  // Единый bulk UPDATE вместо N запросов в цикле
+  const result = await db.update(driverSubscriptionsTable)
+    .set({ status: "expired" })
+    .where(and(
+      or(eq(driverSubscriptionsTable.status, "active"), eq(driverSubscriptionsTable.status, "trial")),
+      lt(driverSubscriptionsTable.endDate, now),
+    ))
+    .returning({ id: driverSubscriptionsTable.id });
+  const updated = result.length;
   res.json({ updated, message: updated > 0 ? `Помечено ${updated} истёкших подписок` : "Все подписки актуальны" });
 });
 
@@ -164,6 +192,37 @@ router.post("/admin/maintenance/activate-subscription", async (req, res): Promis
   }
 
   res.json({ ok: true, driverName: user.name, phone, endDate, days });
+});
+
+// POST /admin/maintenance/expire-subscription — сделать подписку водителя истекающей (для тестов)
+router.post("/admin/maintenance/expire-subscription", async (req, res): Promise<void> => {
+  const { phone, hoursLeft = 2 } = req.body;
+  if (!phone) { res.status(400).json({ error: "Укажите phone" }); return; }
+
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.phone, phone.trim()));
+  if (!user) { res.status(404).json({ error: "Пользователь не найден" }); return; }
+
+  const [driver] = await db.select().from(driversTable).where(eq(driversTable.userId, user.id));
+  if (!driver) { res.status(404).json({ error: "Профиль водителя не найден" }); return; }
+
+  const endDate = new Date(Date.now() + parseInt(hoursLeft) * 3600_000);
+
+  const [existing] = await db.select().from(driverSubscriptionsTable)
+    .where(eq(driverSubscriptionsTable.driverId, driver.id))
+    .orderBy(sql`created_at DESC`).limit(1);
+
+  if (existing) {
+    await db.update(driverSubscriptionsTable)
+      .set({ status: "active", endDate })
+      .where(eq(driverSubscriptionsTable.id, existing.id));
+  } else {
+    await db.insert(driverSubscriptionsTable).values({
+      driverId: driver.id, status: "active",
+      startDate: new Date(Date.now() - 28 * 86400_000), endDate, amount: 0,
+    });
+  }
+
+  res.json({ ok: true, driverName: user.name, phone, endDate, hoursLeft, message: `Подписка истекает через ${hoursLeft}ч` });
 });
 
 // POST /admin/maintenance/add-bonus — начислить бонус пользователю вручную

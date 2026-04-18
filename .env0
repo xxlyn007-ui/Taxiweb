@@ -1,0 +1,6 @@
+
+FIREBASE_SERVICE_ACCOUNT={"type":"service_account","project_id":"...","private_key":"..."}
+DATABASE_URL=postgresql://taxi_user:Sasping02@localhost:5432/taxi_impulse
+SESSION_SECRET=TaxiImpulse2024SecureKey_xK9mP3qR7vL2nJ5wE8yH1cB6tA4sD0u
+YOOKASSA_SHOP_ID=1306321
+YOOKASSA_SECRET_KEY=live_pKSczutcQ9JfnH6ItQ-4ZdxTYDZcHrNJYAoreSkixz0

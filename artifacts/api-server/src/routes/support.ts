@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
-import { db, supportMessagesTable } from "@workspace/db";
+import { db, supportMessagesTable, usersTable } from "@workspace/db";
+import { sendPushToUser } from "../push";
 
 const router: IRouter = Router();
 
@@ -44,6 +45,32 @@ router.post("/support/messages", async (req, res): Promise<void> => {
     message: message.trim(),
     isFromSupport: isFromSupport === true,
   }).returning();
+
+  // Push-уведомление
+  try {
+    if (isFromSupport === true) {
+      // Поддержка написала — уведомить пользователя
+      sendPushToUser(parseInt(userId), {
+        title: "💬 Ответ от поддержки",
+        body: message.trim().slice(0, 100),
+        tag: "support",
+        url: userRole === "driver" ? "/driver" : "/passenger",
+      }).catch(() => {});
+    } else {
+      // Пользователь написал — уведомить всех админов
+      const admins = await db.select({ id: usersTable.id })
+        .from(usersTable)
+        .where(eq(usersTable.role, "admin"));
+      for (const admin of admins) {
+        sendPushToUser(admin.id, {
+          title: `💬 Обращение в поддержку`,
+          body: message.trim().slice(0, 100),
+          tag: "support-admin",
+          url: "/admin/support",
+        }).catch(() => {});
+      }
+    }
+  } catch {}
 
   res.status(201).json({
     id: msg.id,

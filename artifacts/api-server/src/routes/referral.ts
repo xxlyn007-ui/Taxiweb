@@ -45,7 +45,7 @@ router.get("/referral/my", async (req, res): Promise<void> => {
   const [{ count: invitedCount }] = await db.select({ count: sql<number>`count(*)::int` })
     .from(usersTable).where(eq(usersTable.referredBy, user.id));
 
-  const bonusPerReferral = parseFloat(await getSetting("referral_bonus_amount", "100"));
+  const bonusPerReferral = parseFloat(await getSetting("referral_bonus", "100"));
   const cashbackPercent = parseFloat(await getSetting("cashback_percent", "3"));
 
   res.json({
@@ -161,6 +161,17 @@ router.get("/admin/bonus-requests", async (_req, res): Promise<void> => {
   });
 
   res.json(enriched);
+});
+
+// POST /api/admin/bonus-requests/:id/reject — отклонить заявку
+router.post("/admin/bonus-requests/:id/reject", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Неверный id" }); return; }
+  const [request] = await db.select().from(driverBonusRequestsTable).where(eq(driverBonusRequestsTable.id, id));
+  if (!request) { res.status(404).json({ error: "Заявка не найдена" }); return; }
+  if (request.status !== "pending") { res.status(409).json({ error: "Заявка уже обработана" }); return; }
+  await db.update(driverBonusRequestsTable).set({ status: "rejected" }).where(eq(driverBonusRequestsTable.id, id));
+  res.json({ ok: true });
 });
 
 // POST /api/admin/bonus-requests/:id/pay — отметить заявку оплаченной

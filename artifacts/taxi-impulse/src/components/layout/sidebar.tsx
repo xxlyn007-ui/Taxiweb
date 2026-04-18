@@ -1,30 +1,85 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
+import { useAuthHeaders } from "@/hooks/use-auth";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
-import { Car, LayoutDashboard, MapPin, BadgeRussianRuble, LogOut, FileText, Users, Headphones, Clock, Settings, Building2, Bell } from "lucide-react";
+import {
+  Car, LayoutDashboard, MapPin, BadgeRussianRuble, LogOut, FileText, Users,
+  Headphones, Clock, Settings, Building2, Bell, Users2, Wallet, UserCog, Server
+} from "lucide-react";
 
-interface NavItem { title: string; url: string; icon: React.ElementType; }
+interface NavItem { title: string; url: string; icon: React.ElementType; badge?: React.ReactNode; }
+
+const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
+
+function useAvailableOrdersCount(driverId?: number) {
+  const authHeaders = useAuthHeaders();
+  return useQuery({
+    queryKey: ["/api/orders/available-count", driverId],
+    enabled: !!driverId,
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/orders?status=pending`, { headers: authHeaders.headers });
+      if (!r.ok) return 0;
+      const data = await r.json();
+      return Array.isArray(data) ? data.length : 0;
+    },
+    refetchInterval: 10000,
+  });
+}
+
+function useDriverId(userId?: number) {
+  const authHeaders = useAuthHeaders();
+  return useQuery({
+    queryKey: ["/api/drivers/my-id", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const r = await fetch(`${BASE}/api/drivers`, { headers: authHeaders.headers });
+      if (!r.ok) return null;
+      const data = await r.json();
+      const me = data.find((d: any) => d.userId === userId);
+      return me?.id || null;
+    },
+    staleTime: 60_000,
+  });
+}
 
 export function Sidebar() {
   const { user, logout } = useAuth();
   const [location] = useLocation();
   if (!user) return null;
 
+  const { data: driverId } = useDriverId(user.role === "driver" ? user.id : undefined);
+  const { data: orderCount = 0 } = useAvailableOrdersCount(user.role === "driver" ? driverId ?? undefined : undefined);
+
+  const hasOrders = (orderCount as number) > 0;
+
   let items: NavItem[] = [];
-  if (user.role === 'passenger') {
+  if (user.role === "passenger") {
     items = [
       { title: "Заказать такси", url: "/passenger", icon: Car },
+      { title: "Попутки", url: "/passenger/rideshare", icon: Users2 },
       { title: "История", url: "/passenger/history", icon: Clock },
       { title: "Поддержка", url: "/support", icon: Headphones },
+      { title: "Аккаунт", url: "/account", icon: UserCog },
     ];
-  } else if (user.role === 'driver') {
+  } else if (user.role === "driver") {
     items = [
       { title: "Мой кабинет", url: "/driver", icon: LayoutDashboard },
-      { title: "Заказы", url: "/driver/orders", icon: MapPin },
+      {
+        title: "Заказы", url: "/driver/orders", icon: MapPin,
+        badge: (
+          <div className={cn(
+            "ml-auto w-2.5 h-2.5 rounded-full flex-shrink-0 transition-colors",
+            hasOrders ? "bg-emerald-500" : "bg-violet-600"
+          )} />
+        )
+      },
+      { title: "Попутки", url: "/driver/rideshare", icon: Users2 },
       { title: "Договор-оферта", url: "/driver/contract", icon: FileText },
       { title: "Поддержка", url: "/support", icon: Headphones },
+      { title: "Аккаунт", url: "/account", icon: UserCog },
     ];
-  } else if (user.role === 'admin') {
+  } else if (user.role === "admin") {
     items = [
       { title: "Статистика", url: "/admin", icon: LayoutDashboard },
       { title: "Заказы", url: "/admin/orders", icon: FileText },
@@ -34,7 +89,9 @@ export function Sidebar() {
       { title: "Города", url: "/admin/cities", icon: Building2 },
       { title: "Рассылка", url: "/admin/notifications", icon: Bell },
       { title: "Поддержка", url: "/admin/support", icon: Headphones },
+      { title: "Запросы бонусов", url: "/admin/bonus-requests", icon: Wallet },
       { title: "Настройки", url: "/admin/settings", icon: Settings },
+      { title: "Обслуживание", url: "/admin/maintenance", icon: Server },
     ];
   }
 
@@ -49,7 +106,7 @@ export function Sidebar() {
 
       <div className="flex-1 py-4 px-3 space-y-0.5 overflow-y-auto">
         {items.map((item) => {
-          const isActive = location === item.url || (item.url !== '/' && location.startsWith(item.url + '/'));
+          const isActive = location === item.url || (item.url !== "/" && location.startsWith(item.url + "/"));
           return (
             <Link key={item.url} href={item.url}>
               <div className={cn(
@@ -59,7 +116,8 @@ export function Sidebar() {
                   : "text-white/40 hover:text-white/70 hover:bg-white/[0.04]"
               )}>
                 <item.icon className={cn("w-4 h-4 flex-shrink-0", isActive ? "text-violet-400" : "")} />
-                {item.title}
+                <span className="flex-1">{item.title}</span>
+                {item.badge}
               </div>
             </Link>
           );

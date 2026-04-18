@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc, inArray } from "drizzle-orm";
-import { db, chatMessagesTable, usersTable } from "@workspace/db";
+import { db, chatMessagesTable, usersTable, ordersTable, driversTable } from "@workspace/db";
+import { sendPushToUser } from "../push";
 
 const router: IRouter = Router();
 
@@ -55,6 +56,33 @@ router.post("/chat/:orderId/messages", async (req, res): Promise<void> => {
   }).returning();
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, senderId));
+
+  // Push-уведомление получателю
+  try {
+    const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+    if (order) {
+      if (senderRole === "passenger" && order.driverId) {
+        // Пассажир написал — уведомить водителя
+        const [driver] = await db.select().from(driversTable).where(eq(driversTable.id, order.driverId));
+        if (driver) {
+          sendPushToUser(driver.userId, {
+            title: `💬 ${user?.name || "Пассажир"}`,
+            body: message.trim().slice(0, 100),
+            tag: `chat-${orderId}`,
+            url: "/driver",
+          }).catch(() => {});
+        }
+      } else if (senderRole === "driver") {
+        // Водитель написал — уведомить пассажира
+        sendPushToUser(order.passengerId, {
+          title: `💬 ${user?.name || "Водитель"}`,
+          body: message.trim().slice(0, 100),
+          tag: `chat-${orderId}`,
+          url: "/passenger",
+        }).catch(() => {});
+      }
+    }
+  } catch {}
 
   res.status(201).json({
     id: msg.id,

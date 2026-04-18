@@ -61,6 +61,7 @@ router.patch("/cities/:id", async (req, res): Promise<void> => {
   if (region?.trim()) update.region = region.trim();
   if (typeof isActive === "boolean") update.isActive = isActive;
 
+  if (Object.keys(update).length === 0) { res.status(400).json({ error: "Нет полей для обновления" }); return; }
   const [city] = await db.update(citiesTable).set(update).where(eq(citiesTable.id, id)).returning();
   if (!city) {
     res.status(404).json({ error: "Город не найден" });

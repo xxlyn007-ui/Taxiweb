@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, inArray, or, isNull } from "drizzle-orm";
+import { eq, sql, and, inArray, or, isNull } from "drizzle-orm";
 import { db, driversTable, usersTable, tariffsTable } from "@workspace/db";
 import { checkDriverSubscription } from "./subscriptions";
 
@@ -57,6 +57,7 @@ async function batchEnrichDrivers(drivers: (typeof driversTable.$inferSelect)[])
       rejectionReason: driver.rejectionReason,
       approvedTariffIds: parseTariffIds(driver.approvedTariffIds),
       activeTariffIds: parseTariffIds(driver.activeTariffIds),
+      orderMode: (driver as any).orderMode ?? "all",
       driverLat: driver.driverLat ?? null,
       driverLon: driver.driverLon ?? null,
       locationUpdatedAt: toDate(driver.locationUpdatedAt) ?? null,
@@ -133,6 +134,23 @@ router.patch("/drivers/:id", async (req, res): Promise<void> => {
         updateData[key] = req.body[key];
       }
     }
+  }
+  // Handle orderMode via raw SQL (Drizzle schema type may not include it yet)
+  if (req.body.orderMode !== undefined) {
+    const validModes = ["taxi", "delivery", "all"];
+    const mode = validModes.includes(req.body.orderMode) ? req.body.orderMode : "all";
+    await db.execute(sql`UPDATE drivers SET order_mode = ${mode} WHERE id = ${id}`);
+    if (Object.keys(updateData).length === 0) {
+      const [fetchedDriver] = await db.select().from(driversTable).where(eq(driversTable.id, id));
+      if (!fetchedDriver) { res.status(404).json({ error: "Водитель не найден" }); return; }
+      const enriched = await enrichDriver(fetchedDriver);
+      res.json(enriched);
+      return;
+    }
+  }
+
+  if (Object.keys(updateData).length === 0) {
+    res.status(400).json({ error: "Нет полей для обновления" }); return;
   }
   const [driver] = await db.update(driversTable).set(updateData).where(eq(driversTable.id, id)).returning();
   if (!driver) { res.status(404).json({ error: "Водитель не найден" }); return; }

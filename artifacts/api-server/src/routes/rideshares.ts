@@ -1,7 +1,8 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, and, gte, inArray } from "drizzle-orm";
+import { eq, desc, and, gte, inArray, sql } from "drizzle-orm";
 import { db, ridesharesTable, rideshareMessagesTable, driversTable, usersTable, settingsTable } from "@workspace/db";
 import crypto from "crypto";
+import { sendPushToUser } from "../push";
 
 const router: IRouter = Router();
 
@@ -59,6 +60,46 @@ async function enrichRideshare(r: typeof ridesharesTable.$inferSelect) {
   return (await enrichRideshares([r]))[0];
 }
 
+// Кэш времени последней проверки (id → timestamp) — не проверяем чаще раз в 30с
+const lastCheckedAt = new Map<number, number>();
+
+// Автоматическая проверка и активация pending-попуток через ЮКассу
+async function autoCheckPendingPayments(rows: (typeof ridesharesTable.$inferSelect)[]): Promise<(typeof ridesharesTable.$inferSelect)[]> {
+  const yookassaConfigured = !!process.env.YOOKASSA_SHOP_ID && !!process.env.YOOKASSA_SECRET_KEY;
+  if (!yookassaConfigured) return rows;
+
+  const now = Date.now();
+  const pending = rows.filter(r =>
+    r.status === "pending" && r.paymentId &&
+    (now - (lastCheckedAt.get(r.id) ?? 0)) > 30_000 // не чаще раз в 30с
+  );
+  if (pending.length === 0) return rows;
+  pending.forEach(r => lastCheckedAt.set(r.id, now));
+
+  const updated = [...rows];
+  await Promise.all(pending.map(async (r) => {
+    try {
+      const payment = await yookassaRequest("GET", `/payments/${r.paymentId}`);
+      if (payment.status === "succeeded") {
+        await db.update(ridesharesTable)
+          .set({ status: "active", paymentStatus: "paid" })
+          .where(eq(ridesharesTable.id, r.id));
+        const idx = updated.findIndex(u => u.id === r.id);
+        if (idx !== -1) updated[idx] = { ...updated[idx], status: "active", paymentStatus: "paid" };
+      } else if (payment.status === "canceled") {
+        await db.update(ridesharesTable)
+          .set({ status: "cancelled", paymentStatus: "cancelled" })
+          .where(eq(ridesharesTable.id, r.id));
+        const idx = updated.findIndex(u => u.id === r.id);
+        if (idx !== -1) updated[idx] = { ...updated[idx], status: "cancelled", paymentStatus: "cancelled" };
+      }
+    } catch (e: any) {
+      console.warn(`[rideshare] autoCheck id=${r.id}:`, e.message);
+    }
+  }));
+  return updated;
+}
+
 // GET /rideshares — активные попутки (для пассажиров)
 router.get("/rideshares", async (req, res): Promise<void> => {
   const today = new Date().toISOString().slice(0, 10);
@@ -68,14 +109,16 @@ router.get("/rideshares", async (req, res): Promise<void> => {
   res.json(await enrichRideshares(rows));
 });
 
-// GET /rideshares/my — попутки текущего водителя
+// GET /rideshares/my — ВСЕ попутки текущего водителя (включая pending после оплаты)
 router.get("/rideshares/my", async (req, res): Promise<void> => {
   const driverId = parseInt(req.query.driverId as string);
   if (isNaN(driverId)) { res.status(400).json({ error: "driverId обязателен" }); return; }
   const rows = await db.select().from(ridesharesTable)
     .where(eq(ridesharesTable.driverId, driverId))
     .orderBy(desc(ridesharesTable.createdAt));
-  res.json(await enrichRideshares(rows));
+  // Автоматически проверяем оплату для pending-попуток (фоновый запрос к ЮКассе)
+  const checked = await autoCheckPendingPayments(rows);
+  res.json(await enrichRideshares(checked));
 });
 
 // GET /rideshares/all — все попутки (для админа)
@@ -89,6 +132,40 @@ router.get("/rideshares/all", async (_req, res): Promise<void> => {
 router.get("/rideshares/post-price", async (_req, res): Promise<void> => {
   const price = await getSetting("rideshare_post_price", "150");
   res.json({ price: parseFloat(price) });
+});
+
+// GET /rideshares/messages-count?driverId= — количество сообщений по всем попуткам водителя (батч, без N запросов)
+router.get("/rideshares/messages-count", async (req, res): Promise<void> => {
+  const driverId = parseInt(req.query.driverId as string);
+  if (isNaN(driverId)) { res.status(400).json({ error: "driverId обязателен" }); return; }
+  const rideRows = await db.select({ id: ridesharesTable.id })
+    .from(ridesharesTable).where(eq(ridesharesTable.driverId, driverId));
+  if (rideRows.length === 0) { res.json({}); return; }
+  const ids = rideRows.map(r => r.id);
+  const msgs = await db.select({
+    rideshareId: rideshareMessagesTable.rideshareId,
+    cnt: sql<number>`count(*)::int`,
+  }).from(rideshareMessagesTable)
+    .where(inArray(rideshareMessagesTable.rideshareId, ids))
+    .groupBy(rideshareMessagesTable.rideshareId);
+  const result: Record<number, number> = {};
+  for (const row of msgs) result[row.rideshareId] = row.cnt;
+  res.json(result);
+});
+
+// GET /rideshares/my-chats?userId= — попутки где пассажир писал сообщения (история чатов)
+router.get("/rideshares/my-chats", async (req, res): Promise<void> => {
+  const userId = parseInt(req.query.userId as string);
+  if (isNaN(userId)) { res.status(400).json({ error: "userId обязателен" }); return; }
+  const msgs = await db.select({ rideshareId: rideshareMessagesTable.rideshareId })
+    .from(rideshareMessagesTable)
+    .where(eq(rideshareMessagesTable.senderId, userId));
+  const rideshareIds = [...new Set(msgs.map(m => m.rideshareId))];
+  if (rideshareIds.length === 0) { res.json([]); return; }
+  const rows = await db.select().from(ridesharesTable)
+    .where(inArray(ridesharesTable.id, rideshareIds))
+    .orderBy(desc(ridesharesTable.createdAt));
+  res.json(await enrichRideshares(rows));
 });
 
 // POST /rideshares — водитель создаёт попутку + оплата
@@ -108,109 +185,161 @@ router.post("/rideshares", async (req, res): Promise<void> => {
   const postPriceStr = await getSetting("rideshare_post_price", "150");
   const postPrice = parseFloat(postPriceStr);
   const yookassaConfigured = !!process.env.YOOKASSA_SHOP_ID && !!process.env.YOOKASSA_SECRET_KEY;
-  console.log(`[rideshare] postPrice=${postPrice}, yookassaConfigured=${yookassaConfigured}, shopId=${process.env.YOOKASSA_SHOP_ID?.slice(0,4)}***`);
 
-  // Создаём запись в БД
-  const [rideshare] = await db.insert(ridesharesTable).values({
-    driverId: parseInt(driverId),
-    fromCity, toCity, fromAddress, toAddress,
-    departureDate, departureTime,
-    seatsTotal: parseInt(seatsTotal) || 3,
-    price: parseFloat(price),
-    description: description || null,
-    status: postPrice <= 0 ? "active" : "pending",
-    paymentStatus: postPrice <= 0 ? "paid" : "pending",
-  }).returning();
-
-  if (!rideshare) { res.status(500).json({ error: "Ошибка создания" }); return; }
+  console.log(`[rideshare] create: price=${postPrice}, yookassa=${yookassaConfigured}`);
 
   // Если публикация бесплатная — сразу активна
-  if (postPrice <= 0) {
+  if (postPrice <= 0 || !yookassaConfigured) {
+    const [rideshare] = await db.insert(ridesharesTable).values({
+      driverId: parseInt(driverId),
+      fromCity, toCity, fromAddress, toAddress,
+      departureDate, departureTime,
+      seatsTotal: parseInt(seatsTotal) || 3,
+      price: parseFloat(price),
+      description: description || null,
+      status: "active",
+      paymentStatus: "paid",
+    }).returning();
+    if (!rideshare) { res.status(500).json({ error: "Ошибка создания" }); return; }
     res.status(201).json({ rideshare: await enrichRideshare(rideshare), confirmationUrl: null });
     return;
   }
 
   // Создаём платёж ЮKassa
-  if (!yookassaConfigured) {
-    // Dev mode — сразу активируем
-    await db.update(ridesharesTable).set({ status: "active", paymentStatus: "paid" })
-      .where(eq(ridesharesTable.id, rideshare.id));
-    res.status(201).json({ rideshare: await enrichRideshare({ ...rideshare, status: "active" }), confirmationUrl: null });
-    return;
-  }
-
   try {
+    const safeReturnUrl = returnUrl || `${process.env.APP_URL || "https://taxiimpulse.ru"}/driver/rideshare?paid=1`;
     const paymentBody = {
       amount: { value: postPrice.toFixed(2), currency: "RUB" },
       capture: true,
-      confirmation: {
-        type: "redirect",
-        return_url: returnUrl || `${process.env.APP_URL || "https://taxiimpulse.ru"}/driver`,
-      },
+      confirmation: { type: "redirect", return_url: safeReturnUrl },
       description: `Публикация попутки TAXI IMPULSE — ${fromCity} → ${toCity}`,
-      metadata: { rideshareId: String(rideshare.id), type: "rideshare_post" },
+      metadata: { rideshareId: "TBD", type: "rideshare_post" },
     };
-    console.log(`[rideshare] Creating payment, amount=${postPrice}, return_url=${paymentBody.confirmation.return_url}`);
     const payment = await yookassaRequest("POST", "/payments", paymentBody);
-    console.log(`[rideshare] Payment created: id=${payment.id}, status=${payment.status}, confirmation_url=${payment.confirmation?.confirmation_url}`);
+    console.log(`[rideshare] payment created: id=${payment.id}, status=${payment.status}`);
 
-    await db.update(ridesharesTable)
-      .set({ paymentId: payment.id })
-      .where(eq(ridesharesTable.id, rideshare.id));
+    // Создаём запись с paymentId сразу
+    const [rideshare] = await db.insert(ridesharesTable).values({
+      driverId: parseInt(driverId),
+      fromCity, toCity, fromAddress, toAddress,
+      departureDate, departureTime,
+      seatsTotal: parseInt(seatsTotal) || 3,
+      price: parseFloat(price),
+      description: description || null,
+      status: "pending",
+      paymentStatus: "pending",
+      paymentId: payment.id,
+    }).returning();
+
+    if (!rideshare) { res.status(500).json({ error: "Ошибка создания" }); return; }
 
     const confirmationUrl = payment.confirmation?.confirmation_url ?? null;
-    res.status(201).json({
-      rideshare: await enrichRideshare(rideshare),
-      confirmationUrl,
-      paymentId: payment.id,
-    });
+    res.status(201).json({ rideshare: await enrichRideshare(rideshare), confirmationUrl, paymentId: payment.id });
   } catch (err: any) {
-    console.error(`[rideshare] Payment error:`, err.message);
-    await db.delete(ridesharesTable).where(eq(ridesharesTable.id, rideshare.id));
-    res.status(502).json({ error: "Ошибка оплаты: " + err.message });
+    console.error(`[rideshare] payment error:`, err.message);
+    res.status(502).json({ error: "Ошибка создания платежа: " + err.message });
   }
 });
 
-// POST /rideshares/:id/pay — получить/обновить ссылку оплаты для попутки
+// GET /rideshares/:id/check-payment — вручную проверить оплату (fallback для фронта)
+router.get("/rideshares/:id/check-payment", async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id);
+  if (isNaN(id)) { res.status(400).json({ error: "Неверный ID" }); return; }
+  const [rideshare] = await db.select().from(ridesharesTable).where(eq(ridesharesTable.id, id));
+  if (!rideshare) { res.status(404).json({ error: "Не найдено" }); return; }
+
+  if (rideshare.status === "active") { res.json({ status: "active", rideshare: await enrichRideshare(rideshare) }); return; }
+
+  const yookassaConfigured = !!process.env.YOOKASSA_SHOP_ID && !!process.env.YOOKASSA_SECRET_KEY;
+  if (!yookassaConfigured) {
+    // Dev mode: сразу активируем
+    const [updated] = await db.update(ridesharesTable)
+      .set({ status: "active", paymentStatus: "paid" })
+      .where(eq(ridesharesTable.id, id))
+      .returning();
+    res.json({ status: "active", rideshare: updated ? await enrichRideshare(updated) : rideshare }); return;
+  }
+
+  if (!rideshare.paymentId) { res.json({ status: rideshare.status, rideshare: await enrichRideshare(rideshare) }); return; }
+
+  try {
+    const payment = await yookassaRequest("GET", `/payments/${rideshare.paymentId}`);
+    if (payment.status === "succeeded") {
+      const [updated] = await db.update(ridesharesTable)
+        .set({ status: "active", paymentStatus: "paid" })
+        .where(eq(ridesharesTable.id, id))
+        .returning();
+      res.json({ status: "active", rideshare: updated ? await enrichRideshare(updated) : rideshare });
+    } else if (payment.status === "canceled") {
+      await db.update(ridesharesTable).set({ status: "cancelled", paymentStatus: "cancelled" }).where(eq(ridesharesTable.id, id));
+      res.json({ status: "cancelled", rideshare });
+    } else {
+      res.json({ status: rideshare.status, paymentStatus: payment.status, rideshare: await enrichRideshare(rideshare) });
+    }
+  } catch (e: any) {
+    console.warn(`[rideshare] check-payment id=${id}:`, e.message);
+    res.json({ status: rideshare.status, rideshare: await enrichRideshare(rideshare) });
+  }
+});
+
+// POST /rideshares/:id/pay — получить/обновить ссылку оплаты для pending-попутки
 router.post("/rideshares/:id/pay", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Неверный ID" }); return; }
 
   const [rideshare] = await db.select().from(ridesharesTable).where(eq(ridesharesTable.id, id));
   if (!rideshare) { res.status(404).json({ error: "Попутка не найдена" }); return; }
-  if (rideshare.paymentStatus === "paid") { res.json({ alreadyPaid: true }); return; }
+  if (rideshare.paymentStatus === "paid" || rideshare.status === "active") {
+    res.json({ alreadyPaid: true }); return;
+  }
 
   const postPriceStr = await getSetting("rideshare_post_price", "150");
   const postPrice = parseFloat(postPriceStr);
   const yookassaConfigured = !!process.env.YOOKASSA_SHOP_ID && !!process.env.YOOKASSA_SECRET_KEY;
 
-  console.log(`[rideshare/pay] id=${id}, postPrice=${postPrice}, yookassaConfigured=${yookassaConfigured}`);
-
-  if (!yookassaConfigured) {
-    await db.update(ridesharesTable).set({ status: "active", paymentStatus: "paid" }).where(eq(ridesharesTable.id, id));
-    res.json({ alreadyPaid: true }); return;
+  if (!yookassaConfigured || postPrice <= 0) {
+    const [updated] = await db.update(ridesharesTable)
+      .set({ status: "active", paymentStatus: "paid" })
+      .where(eq(ridesharesTable.id, id))
+      .returning();
+    res.json({ alreadyPaid: true, rideshare: updated }); return;
   }
 
-  const returnUrl = req.body.returnUrl || `https://taxiimpulse.ru/driver/rideshare?paid=1`;
+  const safeReturnUrl = req.body.returnUrl || `https://taxiimpulse.ru/driver/rideshare?paid=1`;
 
   try {
+    // Сначала проверим существующий платёж если есть
+    if (rideshare.paymentId) {
+      try {
+        const existing = await yookassaRequest("GET", `/payments/${rideshare.paymentId}`);
+        if (existing.status === "succeeded") {
+          await db.update(ridesharesTable).set({ status: "active", paymentStatus: "paid" }).where(eq(ridesharesTable.id, id));
+          res.json({ alreadyPaid: true }); return;
+        }
+        if (existing.status === "pending" && existing.confirmation?.confirmation_url) {
+          res.json({ confirmationUrl: existing.confirmation.confirmation_url, paymentId: existing.id }); return;
+        }
+      } catch {}
+    }
+
+    // Создаём новый платёж
     const payment = await yookassaRequest("POST", "/payments", {
       amount: { value: postPrice.toFixed(2), currency: "RUB" },
       capture: true,
-      confirmation: { type: "redirect", return_url: returnUrl },
+      confirmation: { type: "redirect", return_url: safeReturnUrl },
       description: `Публикация попутки TAXI IMPULSE — ${rideshare.fromCity} → ${rideshare.toCity}`,
       metadata: { rideshareId: String(id), type: "rideshare_post" },
     });
-    console.log(`[rideshare/pay] payment id=${payment.id}, url=${payment.confirmation?.confirmation_url}`);
-    await db.update(ridesharesTable).set({ paymentId: payment.id }).where(eq(ridesharesTable.id, id));
+
+    await db.update(ridesharesTable).set({ paymentId: payment.id, status: "pending" }).where(eq(ridesharesTable.id, id));
     res.json({ confirmationUrl: payment.confirmation?.confirmation_url ?? null, paymentId: payment.id });
   } catch (err: any) {
-    console.error(`[rideshare/pay] error:`, err.message);
-    res.status(502).json({ error: "Ошибка оплаты: " + err.message });
+    console.error(`[rideshare/pay] id=${id}:`, err.message);
+    res.status(502).json({ error: "Ошибка создания платежа: " + err.message });
   }
 });
 
-// PATCH /rideshares/:id — обновить/отменить
+// PATCH /rideshares/:id — обновить
 router.patch("/rideshares/:id", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Неверный ID" }); return; }
@@ -231,7 +360,7 @@ router.delete("/rideshares/:id", async (req, res): Promise<void> => {
   res.json({ ok: true });
 });
 
-// GET /rideshares/:id/messages — история сообщений
+// GET /rideshares/:id/messages
 router.get("/rideshares/:id/messages", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id);
   if (isNaN(id)) { res.status(400).json({ error: "Неверный ID" }); return; }
@@ -241,42 +370,102 @@ router.get("/rideshares/:id/messages", async (req, res): Promise<void> => {
   res.json(msgs);
 });
 
-// POST /rideshares/:id/messages — отправить сообщение
+// POST /rideshares/:id/messages
 router.post("/rideshares/:id/messages", async (req, res): Promise<void> => {
   const rideshareId = parseInt(req.params.id);
   if (isNaN(rideshareId)) { res.status(400).json({ error: "Неверный ID" }); return; }
   const { senderId, message } = req.body;
   if (!senderId || !message?.trim()) { res.status(400).json({ error: "senderId и message обязательны" }); return; }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, parseInt(senderId)));
+  const senderIdNum = parseInt(senderId);
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, senderIdNum));
   if (!user) { res.status(404).json({ error: "Пользователь не найден" }); return; }
 
   const [msg] = await db.insert(rideshareMessagesTable).values({
     rideshareId,
-    senderId: parseInt(senderId),
+    senderId: senderIdNum,
     senderName: user.name,
     message: message.trim(),
   }).returning();
 
+  // Push-уведомления асинхронно
+  (async () => {
+    try {
+      const [rideshare] = await db.select().from(ridesharesTable).where(eq(ridesharesTable.id, rideshareId));
+      if (!rideshare) return;
+
+      const preview = message.trim().substring(0, 100);
+
+      if (user.role === "passenger") {
+        // Пассажир написал → уведомить водителя
+        const [driver] = await db.select().from(driversTable).where(eq(driversTable.id, rideshare.driverId));
+        if (driver) {
+          await sendPushToUser(driver.userId, {
+            title: "Сообщение от пассажира",
+            body: `${user.name}: ${preview}`,
+          }).catch(() => {});
+        }
+      } else {
+        // Водитель написал → уведомить всех пассажиров что писали в этом чате
+        const allMsgs = await db.select({ senderId: rideshareMessagesTable.senderId })
+          .from(rideshareMessagesTable)
+          .where(eq(rideshareMessagesTable.rideshareId, rideshareId));
+        const passengerIds = [...new Set(allMsgs.map(m => m.senderId).filter(id => id !== senderIdNum))];
+        for (const pid of passengerIds) {
+          await sendPushToUser(pid, {
+            title: "Ответ водителя",
+            body: `${user.name}: ${preview}`,
+          }).catch(() => {});
+        }
+      }
+    } catch (e: any) {
+      console.warn("[rideshare msg push]", e.message);
+    }
+  })();
+
   res.status(201).json(msg);
 });
 
-// POST /rideshares/webhook/yookassa — обработка успешной оплаты
+// POST /rideshares/webhook/yookassa — вебхук от ЮКассы (настроить URL в dashboard)
 router.post("/rideshares/webhook/yookassa", async (req, res): Promise<void> => {
   try {
     const event = req.body;
-    if (event?.event === "payment.succeeded") {
-      const paymentId = event.object?.id;
-      const meta = event.object?.metadata;
-      if (meta?.type === "rideshare_post" && meta?.rideshareId) {
-        const id = parseInt(meta.rideshareId);
+    res.json({ ok: true });
+
+    const rawPaymentId = event?.object?.id;
+    if (!rawPaymentId) return;
+
+    // Верифицируем платёж через API — не доверяем только телу вебхука
+    let verified: any;
+    try {
+      verified = await yookassaRequest("GET", `/payments/${rawPaymentId}`);
+    } catch {
+      console.warn(`[rideshare webhook] не удалось верифицировать платёж ${rawPaymentId}`);
+      return;
+    }
+    if (!verified) return;
+
+    const paymentId = verified.id;
+    const meta = verified.metadata || {};
+
+    if (verified.status === "succeeded" && meta.type === "rideshare_post" && meta.rideshareId) {
+      const id = parseInt(meta.rideshareId);
+      if (!isNaN(id)) {
         await db.update(ridesharesTable)
           .set({ status: "active", paymentStatus: "paid", paymentId })
           .where(eq(ridesharesTable.id, id));
+        console.log(`[rideshare webhook] activated id=${id}`);
+      }
+    } else if (verified.status === "canceled" && meta.type === "rideshare_post" && meta.rideshareId) {
+      const id = parseInt(meta.rideshareId);
+      if (!isNaN(id)) {
+        await db.delete(ridesharesTable).where(eq(ridesharesTable.id, id));
+        console.log(`[rideshare webhook] canceled/deleted id=${id}`);
       }
     }
-    res.json({ ok: true });
-  } catch { res.status(500).json({ ok: false }); }
+  } catch (e: any) {
+    console.error("[rideshare webhook]", e.message);
+  }
 });
 
 export default router;
