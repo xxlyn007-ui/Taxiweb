@@ -27,6 +27,10 @@ import AdminNotifications from "@/pages/admin/notifications";
 import AdminUsers from "@/pages/admin/users";
 import AdminBonusRequests from "@/pages/admin/bonus-requests";
 import AdminMaintenance from "@/pages/admin/maintenance";
+import CityAdmins from "@/pages/admin/city-admins";
+import DeliveryOrders from "@/pages/admin/delivery-orders";
+import AdminPayoutRequests from "@/pages/admin/payout-requests";
+import DriverDeliveryPayout from "@/pages/driver/delivery-payout";
 import SupportPage from "@/pages/support";
 import TermsPage from "@/pages/terms";
 import AccountPage from "@/pages/account";
@@ -104,6 +108,7 @@ function Router() {
       <Route path="/driver" component={DriverDashboard} />
       <Route path="/driver/orders" component={AvailableOrders} />
       <Route path="/driver/contract" component={DriverContract} />
+              <Route path="/driver/delivery-payout" component={DriverDeliveryPayout} />
       <Route path="/driver/rideshare" component={DriverRideshare} />
 
       <Route path="/admin" component={AdminDashboard} />
@@ -117,6 +122,9 @@ function Router() {
       <Route path="/admin/users" component={AdminUsers} />
       <Route path="/admin/bonus-requests" component={AdminBonusRequests} />
       <Route path="/admin/maintenance" component={AdminMaintenance} />
+              <Route path="/admin/city-admins" component={CityAdmins} />
+              <Route path="/admin/delivery-orders" component={DeliveryOrders} />
+              <Route path="/admin/payout-requests" component={AdminPayoutRequests} />
 
       <Route path="/account" component={AccountPage} />
       <Route path="/support" component={SupportPage} />

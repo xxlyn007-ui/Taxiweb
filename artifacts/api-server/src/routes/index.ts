@@ -19,6 +19,10 @@ import geocodeRouter from "./geocode";
 import ridesharesRouter from "./rideshares";
 import maintenanceRouter from "./maintenance";
 import referralRouter from "./referral";
+import adminAccountsRouter from "./admin-accounts";
+import deliveryRouter from "./delivery";
+import payoutRequestsRouter from "./payout-requests";
+import cityFeesRouter from "./city-fees";
 
 const router: IRouter = Router();
 
@@ -42,5 +46,9 @@ router.use(notificationsRouter);
 router.use(ridesharesRouter);
 router.use(maintenanceRouter);
 router.use(referralRouter);
+router.use(adminAccountsRouter);
+router.use(deliveryRouter);
+router.use(payoutRequestsRouter);
+router.use(cityFeesRouter);
 
 export default router;

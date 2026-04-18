@@ -5,7 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import {
   Car, LayoutDashboard, MapPin, BadgeRussianRuble, LogOut, FileText, Users,
-  Headphones, Clock, Settings, Building2, Bell, Users2, Wallet, UserCog, Server
+  Headphones, Clock, Settings, Building2, Bell, Users2, Wallet, UserCog, Server,
+  Truck, UserPlus, BanknoteIcon
 } from "lucide-react";
 
 interface NavItem { title: string; url: string; icon: React.ElementType; badge?: React.ReactNode; }
@@ -76,6 +77,7 @@ export function Sidebar() {
       },
       { title: "Попутки", url: "/driver/rideshare", icon: Users2 },
       { title: "Договор-оферта", url: "/driver/contract", icon: FileText },
+      { title: "Баланс доставки", url: "/driver/delivery-payout", icon: Wallet },
       { title: "Поддержка", url: "/support", icon: Headphones },
       { title: "Аккаунт", url: "/account", icon: UserCog },
     ];
@@ -92,6 +94,23 @@ export function Sidebar() {
       { title: "Запросы бонусов", url: "/admin/bonus-requests", icon: Wallet },
       { title: "Настройки", url: "/admin/settings", icon: Settings },
       { title: "Обслуживание", url: "/admin/maintenance", icon: Server },
+      { title: "Администраторы", url: "/admin/city-admins", icon: UserPlus },
+      { title: "Заказы доставки", url: "/admin/delivery-orders", icon: Truck },
+      { title: "Выплаты", url: "/admin/payout-requests", icon: BanknoteIcon },
+    ];
+  } else if (user.role === "city_admin") {
+    items = [
+      { title: "Статистика", url: "/admin", icon: LayoutDashboard },
+      { title: "Заказы", url: "/admin/orders", icon: FileText },
+      { title: "Водители", url: "/admin/drivers", icon: Car },
+      { title: "Пользователи", url: "/admin/users", icon: Users },
+      { title: "Заказы доставки", url: "/admin/delivery-orders", icon: Truck },
+    ];
+  } else if (user.role === "delivery_admin") {
+    items = [
+      { title: "Заказы доставки", url: "/admin/delivery-orders", icon: Truck },
+      { title: "Выплаты", url: "/admin/payout-requests", icon: BanknoteIcon },
+      { title: "Поддержка", url: "/support", icon: Headphones },
     ];
   }
 

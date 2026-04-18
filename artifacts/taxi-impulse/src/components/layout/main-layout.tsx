@@ -18,6 +18,8 @@ export function MainLayout({ children, allowedRoles }: MainLayoutProps) {
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
     if (user.role === 'admin') return <Redirect to="/admin" />;
+    if (user.role === 'city_admin') return <Redirect to="/admin" />;
+    if (user.role === 'delivery_admin') return <Redirect to="/admin/delivery-orders" />;
     if (user.role === 'driver') return <Redirect to="/driver" />;
     return <Redirect to="/passenger" />;
   }

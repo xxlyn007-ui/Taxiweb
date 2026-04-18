@@ -31,6 +31,9 @@ export const driversTable = pgTable("drivers", {
   bonusBalance: real("bonus_balance").notNull().default(0),
   orderMode: text("order_mode").notNull().default("all"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  acceptsDeliveries: boolean("accepts_deliveries").notNull().default(false),
+  partnerCompany: text("partner_company"),
+  deliveryBalance: real("delivery_balance").notNull().default(0),
 }, (table) => ({
   statusIdx: index("drivers_status_idx").on(table.status),
   cityIdx: index("drivers_city_idx").on(table.city),
