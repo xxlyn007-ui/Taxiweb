@@ -1,4 +1,4 @@
-const CACHE_NAME = "taxi-impulse-v3";
+const CACHE_NAME = "taxi-impulse-v4";
 // Ресурсы для предзакэширования при установке
 const PRECACHE = ["/", "/manifest.webmanifest", "/logo.png"];
 
