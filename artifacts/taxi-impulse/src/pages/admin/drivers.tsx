@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { MainLayout } from "@/components/layout/main-layout";
+import { useAuth } from "@/hooks/use-auth";
 import { useDriversQuery, useBlockDriverMutation, useApproveDriverMutation, useUpdateDriverMutation } from "@/hooks/use-drivers";
 import { useTariffsQuery } from "@/hooks/use-admin";
 import { formatMoney } from "@/lib/utils";
@@ -10,7 +11,9 @@ import { cn } from "@/lib/utils";
 type Tab = "pending" | "active" | "blocked";
 
 export default function AdminDrivers() {
-  const { data: drivers, isLoading } = useDriversQuery();
+  const { user } = useAuth();
+  const managedCity = user?.role === "city_admin" ? (user as any).managedCity : undefined;
+  const { data: drivers, isLoading } = useDriversQuery(managedCity ? { city: managedCity } : undefined);
   const { data: tariffs } = useTariffsQuery();
   const blockDriver = useBlockDriverMutation();
   const approveDriver = useApproveDriverMutation();

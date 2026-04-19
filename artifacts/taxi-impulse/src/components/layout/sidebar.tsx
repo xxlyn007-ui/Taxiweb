@@ -101,10 +101,9 @@ export function Sidebar() {
   } else if (user.role === "city_admin") {
     items = [
       { title: "Статистика", url: "/admin", icon: LayoutDashboard },
-      { title: "Заказы", url: "/admin/orders", icon: FileText },
+      { title: "История заказов", url: "/admin/orders", icon: FileText },
       { title: "Водители", url: "/admin/drivers", icon: Car },
       { title: "Пользователи", url: "/admin/users", icon: Users },
-      { title: "Заказы доставки", url: "/admin/delivery-orders", icon: Truck },
     ];
   } else if (user.role === "delivery_admin") {
     items = [

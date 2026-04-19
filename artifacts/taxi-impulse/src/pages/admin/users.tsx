@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { MainLayout } from "@/components/layout/main-layout";
+import { useAuth } from "@/hooks/use-auth";
 import { useAllUsersQuery, useBlockUserMutation, useDeleteUserMutation } from "@/hooks/use-users";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -27,7 +28,9 @@ function formatDate(dt: any) {
 }
 
 export default function AdminUsers() {
-  const { data: allUsers, isLoading } = useAllUsersQuery();
+  const { user } = useAuth();
+  const managedCity = user?.role === "city_admin" ? (user as any).managedCity : undefined;
+  const { data: allUsers, isLoading } = useAllUsersQuery(managedCity);
   const blockUser = useBlockUserMutation();
   const deleteUser = useDeleteUserMutation();
   const { toast } = useToast();

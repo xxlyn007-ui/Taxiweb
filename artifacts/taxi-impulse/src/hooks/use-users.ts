@@ -3,12 +3,13 @@ import { useAuthHeaders } from "./use-auth";
 
 const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") || "";
 
-export function useAllUsersQuery() {
+export function useAllUsersQuery(city?: string) {
   const authHeaders = useAuthHeaders();
+  const qs = city ? `?city=${encodeURIComponent(city)}` : "";
   return useQuery({
-    queryKey: ["/api/users"],
+    queryKey: ["/api/users", city],
     queryFn: async () => {
-      const res = await fetch(`${BASE}/api/users`, { headers: authHeaders.headers });
+      const res = await fetch(`${BASE}/api/users${qs}`, { headers: authHeaders.headers });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Ошибка");
       return data as any[];

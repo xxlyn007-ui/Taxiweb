@@ -18,8 +18,11 @@ function formatUser(user: any) {
   };
 }
 
-router.get("/users", async (_req, res): Promise<void> => {
-  const users = await db.select().from(usersTable);
+router.get("/users", async (req, res): Promise<void> => {
+  const cityParam = typeof req.query.city === "string" ? req.query.city : null;
+  const users = cityParam
+    ? await db.select().from(usersTable).where(eq(usersTable.city, cityParam))
+    : await db.select().from(usersTable);
   res.json(users.map(formatUser));
 });
 
