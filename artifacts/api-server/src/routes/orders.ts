@@ -17,6 +17,7 @@ import {
   UpdateOrderResponse,
 } from "@workspace/api-zod";
 import { CITY_COORDS, geocodeAddress, haversineKm } from "../geocoder";
+import { getUserFromRequest } from "./auth";
 
 const router: IRouter = Router();
 
@@ -339,12 +340,33 @@ async function enrichOrder(order: typeof ordersTable.$inferSelect) {
 router.get("/orders", async (req, res): Promise<void> => {
   const queryParams = GetOrdersQueryParams.safeParse(req.query);
 
+  // Определяем городского администратора по сессии
+  const sessionUser = await getUserFromRequest(req);
+  const adminCity: string | null = sessionUser?.role === "city_admin"
+    ? ((sessionUser as any).managed_city ?? (sessionUser as any).managedCity ?? null)
+    : null;
+
   const conditions = [];
   let hasUserFilter = false;
   if (queryParams.success) {
     if (queryParams.data.status) conditions.push(eq(ordersTable.status, queryParams.data.status));
     if (queryParams.data.driverId) { conditions.push(eq(ordersTable.driverId, queryParams.data.driverId)); hasUserFilter = true; }
     if (queryParams.data.passengerId) { conditions.push(eq(ordersTable.passengerId, queryParams.data.passengerId)); hasUserFilter = true; }
+  }
+
+  // city_admin: принудительно фильтруем по городу из сессии и только сегодня
+  if (adminCity) {
+    conditions.push(eq(ordersTable.city, adminCity));
+    const t = new Date(); t.setHours(0, 0, 0, 0);
+    conditions.push(sql`${ordersTable.createdAt} >= ${t}`);
+  } else {
+    const cityParam = typeof req.query.city === "string" ? req.query.city : null;
+    if (cityParam) conditions.push(eq(ordersTable.city, cityParam));
+    const todayParam = req.query.today === "1";
+    if (todayParam) {
+      const t = new Date(); t.setHours(0, 0, 0, 0);
+      conditions.push(sql`${ordersTable.createdAt} >= ${t}`);
+    }
   }
 
   // Ограничиваем выборку: для пассажира/водителя — 50 последних,

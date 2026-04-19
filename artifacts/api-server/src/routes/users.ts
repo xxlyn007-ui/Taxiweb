@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, ilike, ne } from "drizzle-orm";
 import { db, usersTable, driversTable, ordersTable, driverSubscriptionsTable } from "@workspace/db";
+import { getUserFromRequest } from "./auth";
 
 const router: IRouter = Router();
 
@@ -19,7 +20,13 @@ function formatUser(user: any) {
 }
 
 router.get("/users", async (req, res): Promise<void> => {
-  const cityParam = typeof req.query.city === "string" ? req.query.city : null;
+  // Принудительная фильтрация по городу для city_admin через сессию
+  const sessionUser = await getUserFromRequest(req);
+  const adminCity: string | null = sessionUser?.role === "city_admin"
+    ? ((sessionUser as any).managed_city ?? (sessionUser as any).managedCity ?? null)
+    : null;
+
+  const cityParam = adminCity ?? (typeof req.query.city === "string" ? req.query.city : null);
   const users = cityParam
     ? await db.select().from(usersTable).where(eq(usersTable.city, cityParam))
     : await db.select().from(usersTable);

@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, sql, and, inArray, or, isNull } from "drizzle-orm";
 import { db, driversTable, usersTable, tariffsTable } from "@workspace/db";
 import { checkDriverSubscription } from "./subscriptions";
+import { getUserFromRequest } from "./auth";
 
 const router: IRouter = Router();
 
@@ -72,7 +73,14 @@ async function enrichDriver(driver: typeof driversTable.$inferSelect) {
 }
 
 router.get("/drivers", async (req, res): Promise<void> => {
-  const { status, city, isApproved, pendingApproval } = req.query as any;
+  // Принудительная фильтрация по городу для city_admin через сессию
+  const sessionUser = await getUserFromRequest(req);
+  const adminCity: string | null = sessionUser?.role === "city_admin"
+    ? ((sessionUser as any).managed_city ?? (sessionUser as any).managedCity ?? null)
+    : null;
+
+  const { status, isApproved, pendingApproval } = req.query as any;
+  const city = adminCity ?? (typeof req.query.city === "string" ? req.query.city : undefined);
 
   const conditions = [];
   if (status) conditions.push(eq(driversTable.status, status));

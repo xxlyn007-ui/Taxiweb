@@ -47,8 +47,12 @@ export default function AdminDashboard() {
             <div className="text-xl font-bold text-red-400">{stats?.cancelledOrders || 0}</div>
           </div>
           <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
-            <div className="text-xs text-white/40 uppercase tracking-wider mb-1">Общая выручка</div>
-            <div className="text-xl font-bold text-white">{formatMoney(stats?.revenue || 0)}</div>
+            <div className="text-xs text-white/40 uppercase tracking-wider mb-1">
+              {isCityAdmin ? "Выручка за сутки" : "Общая выручка"}
+            </div>
+            <div className="text-xl font-bold text-white">
+              {formatMoney(isCityAdmin ? (stats?.revenueToday || 0) : (stats?.revenue || 0))}
+            </div>
           </div>
         </div>
 
