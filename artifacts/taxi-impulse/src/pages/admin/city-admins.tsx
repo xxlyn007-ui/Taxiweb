@@ -119,14 +119,14 @@ export default function CityAdmins() {
                   {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
-              {tab === "delivery_admin" && (
-                <div className="col-span-2">
-                  <label className="text-xs text-white/40 mb-1 block">Партнёрская компания (необязательно)</label>
-                  <input value={form.partnerCompany} onChange={e => setForm(f => ({ ...f, partnerCompany: e.target.value }))}
-                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-violet-500"
-                    placeholder="Название компании-партнёра" />
-                </div>
-              )}
+              <div className="col-span-2">
+                <label className="text-xs text-white/40 mb-1 block">
+                  {tab === "city_admin" ? "Фирма (необязательно — для фильтрации по компании)" : "Партнёрская компания (необязательно)"}
+                </label>
+                <input value={form.partnerCompany} onChange={e => setForm(f => ({ ...f, partnerCompany: e.target.value }))}
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-3 py-2 text-sm text-white placeholder-white/20 focus:outline-none focus:border-violet-500"
+                  placeholder="Название компании (оставьте пустым — для просмотра всего города)" />
+              </div>
             </div>
             <div className="flex gap-2">
               <button onClick={() => createMut.mutate({ ...form, role: tab })}

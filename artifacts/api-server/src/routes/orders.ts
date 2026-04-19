@@ -342,8 +342,12 @@ router.get("/orders", async (req, res): Promise<void> => {
 
   // Определяем городского администратора по сессии
   const sessionUser = await getUserFromRequest(req);
-  const adminCity: string | null = sessionUser?.role === "city_admin"
+  const isCityAdmin = sessionUser?.role === "city_admin";
+  const adminCity: string | null = isCityAdmin
     ? ((sessionUser as any).managed_city ?? (sessionUser as any).managedCity ?? null)
+    : null;
+  const adminCompany: string | null = isCityAdmin
+    ? ((sessionUser as any).partner_company ?? (sessionUser as any).partnerCompany ?? null)
     : null;
 
   const conditions = [];
@@ -355,11 +359,25 @@ router.get("/orders", async (req, res): Promise<void> => {
   }
 
   // city_admin: принудительно фильтруем по городу из сессии и только сегодня
-  if (adminCity) {
+  if (isCityAdmin && adminCity) {
     conditions.push(eq(ordersTable.city, adminCity));
     const t = new Date(); t.setHours(0, 0, 0, 0);
     conditions.push(sql`${ordersTable.createdAt} >= ${t}`);
-  } else {
+
+    // Если у city_admin указана фирма — только заказы водителей этой фирмы
+    if (adminCompany) {
+      const companyDrivers = await db.select({ id: driversTable.id })
+        .from(driversTable)
+        .where(eq(driversTable.partnerCompany, adminCompany));
+      const driverIds = companyDrivers.map(d => d.id);
+      if (driverIds.length > 0) {
+        conditions.push(inArray(ordersTable.driverId, driverIds));
+      } else {
+        // Нет водителей фирмы — возвращаем пустой список
+        res.json([]); return;
+      }
+    }
+  } else if (!isCityAdmin) {
     const cityParam = typeof req.query.city === "string" ? req.query.city : null;
     if (cityParam) conditions.push(eq(ordersTable.city, cityParam));
     const todayParam = req.query.today === "1";

@@ -8,6 +8,7 @@ export default function AdminDashboard() {
   const { user } = useAuth();
   const isCityAdmin = user?.role === "city_admin";
   const managedCity: string | undefined = isCityAdmin ? (user as any).managedCity ?? undefined : undefined;
+  const partnerCompany: string | undefined = isCityAdmin ? (user as any).partnerCompany ?? undefined : undefined;
 
   const { data: stats } = useStatsQuery();
   const { data: cityStats } = useStatsByCityQuery();
@@ -17,10 +18,18 @@ export default function AdminDashboard() {
       <div className="space-y-5 max-w-5xl">
         <div>
           <h1 className="text-xl font-bold text-white">
-            {isCityAdmin ? `Статистика — ${managedCity || "ваш город"}` : "Статистика платформы"}
+            {isCityAdmin
+              ? partnerCompany
+                ? `Статистика — ${partnerCompany}`
+                : `Статистика — ${managedCity || "ваш город"}`
+              : "Статистика платформы"}
           </h1>
           <p className="text-sm text-white/40 mt-0.5">
-            {isCityAdmin ? `Актуальные данные по городу ${managedCity || ""}` : "Актуальные данные по всем городам"}
+            {isCityAdmin
+              ? partnerCompany
+                ? `Данные по фирме «${partnerCompany}» в ${managedCity || "вашем городе"} за сегодня`
+                : `Актуальные данные по городу ${managedCity || ""}`
+              : "Актуальные данные по всем городам"}
           </p>
         </div>
 

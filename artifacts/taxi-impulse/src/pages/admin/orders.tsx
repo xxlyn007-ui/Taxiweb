@@ -38,6 +38,7 @@ export default function AdminOrders() {
   const { user } = useAuth();
   const isCityAdmin = user?.role === "city_admin";
   const managedCity: string | undefined = isCityAdmin ? (user as any).managedCity ?? undefined : undefined;
+  const partnerCompany: string | undefined = isCityAdmin ? (user as any).partnerCompany ?? undefined : undefined;
 
   const { data: orders, isLoading } = useOrdersFiltered(managedCity, isCityAdmin);
 
@@ -61,10 +62,18 @@ export default function AdminOrders() {
       <div className="space-y-5 max-w-5xl">
         <div>
           <h1 className="text-xl font-bold text-white">
-            {isCityAdmin ? `История заказов — ${managedCity || "ваш город"}` : "Управление заказами"}
+            {isCityAdmin
+              ? partnerCompany
+                ? `История заказов — ${partnerCompany}`
+                : `История заказов — ${managedCity || "ваш город"}`
+              : "Управление заказами"}
           </h1>
           <p className="text-sm text-white/40 mt-0.5">
-            {isCityAdmin ? "Все заказы за сегодня в вашем городе" : "Все заказы платформы"}
+            {isCityAdmin
+              ? partnerCompany
+                ? `Заказы водителей фирмы «${partnerCompany}» за сегодня`
+                : `Все заказы за сегодня в ${managedCity || "вашем городе"}`
+              : "Все заказы платформы"}
           </p>
         </div>
 

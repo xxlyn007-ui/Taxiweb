@@ -73,10 +73,14 @@ async function enrichDriver(driver: typeof driversTable.$inferSelect) {
 }
 
 router.get("/drivers", async (req, res): Promise<void> => {
-  // Принудительная фильтрация по городу для city_admin через сессию
+  // Принудительная фильтрация для city_admin через сессию
   const sessionUser = await getUserFromRequest(req);
-  const adminCity: string | null = sessionUser?.role === "city_admin"
+  const isCityAdmin = sessionUser?.role === "city_admin";
+  const adminCity: string | null = isCityAdmin
     ? ((sessionUser as any).managed_city ?? (sessionUser as any).managedCity ?? null)
+    : null;
+  const adminCompany: string | null = isCityAdmin
+    ? ((sessionUser as any).partner_company ?? (sessionUser as any).partnerCompany ?? null)
     : null;
 
   const { status, isApproved, pendingApproval } = req.query as any;
@@ -91,6 +95,11 @@ router.get("/drivers", async (req, res): Promise<void> => {
 
   if (city) {
     drivers = drivers.filter(d => (d.workCity || d.city) === city);
+  }
+
+  // Если у city_admin указана фирма — показываем только водителей этой фирмы
+  if (adminCompany) {
+    drivers = drivers.filter(d => d.partnerCompany === adminCompany);
   }
 
   if (pendingApproval === 'true') {

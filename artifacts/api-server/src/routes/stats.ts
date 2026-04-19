@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { sql, count, eq } from "drizzle-orm";
+import { sql, count, eq, inArray } from "drizzle-orm";
 import { db, ordersTable, driversTable, usersTable } from "@workspace/db";
 import { getUserFromRequest } from "./auth";
 
@@ -10,41 +10,89 @@ router.get("/stats", async (req, res): Promise<void> => {
   today.setHours(0, 0, 0, 0);
 
   const user = await getUserFromRequest(req);
-  const managedCity: string | null =
-    user?.role === "city_admin" ? ((user as any).managed_city ?? (user as any).managedCity ?? null) : null;
+  const isCityAdmin = user?.role === "city_admin";
+  const managedCity: string | null = isCityAdmin
+    ? ((user as any).managed_city ?? (user as any).managedCity ?? null)
+    : null;
+  const partnerCompany: string | null = isCityAdmin
+    ? ((user as any).partner_company ?? (user as any).partnerCompany ?? null)
+    : null;
+
+  // Если city_admin с фирмой — получаем ID водителей этой фирмы
+  let companyDriverIds: number[] | null = null;
+  if (managedCity && partnerCompany) {
+    const companyDrivers = await db.select({ id: driversTable.id })
+      .from(driversTable)
+      .where(eq(driversTable.partnerCompany, partnerCompany));
+    companyDriverIds = companyDrivers.map(d => d.id);
+  }
 
   const [ordersStats, driversStats, usersStats] = await Promise.all([
     db.select({
       total: managedCity
-        ? sql<number>`COUNT(*) FILTER (WHERE city = ${managedCity})`
+        ? (companyDriverIds !== null
+          ? (companyDriverIds.length > 0
+            ? sql<number>`COUNT(*) FILTER (WHERE city = ${managedCity} AND driver_id = ANY(ARRAY[${sql.raw(companyDriverIds.join(',') || '0')}]::int[]))`
+            : sql<number>`0`)
+          : sql<number>`COUNT(*) FILTER (WHERE city = ${managedCity})`)
         : count(),
       ordersToday: managedCity
-        ? sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today} AND city = ${managedCity})`
+        ? (companyDriverIds !== null
+          ? (companyDriverIds.length > 0
+            ? sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today} AND city = ${managedCity} AND driver_id = ANY(ARRAY[${sql.raw(companyDriverIds.join(',') || '0')}]::int[]))`
+            : sql<number>`0`)
+          : sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today} AND city = ${managedCity})`)
         : sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today})`,
       completed: managedCity
-        ? sql<number>`COUNT(*) FILTER (WHERE status = 'completed' AND city = ${managedCity})`
+        ? (companyDriverIds !== null
+          ? (companyDriverIds.length > 0
+            ? sql<number>`COUNT(*) FILTER (WHERE status = 'completed' AND city = ${managedCity} AND driver_id = ANY(ARRAY[${sql.raw(companyDriverIds.join(',') || '0')}]::int[]))`
+            : sql<number>`0`)
+          : sql<number>`COUNT(*) FILTER (WHERE status = 'completed' AND city = ${managedCity})`)
         : sql<number>`COUNT(*) FILTER (WHERE status = 'completed')`,
       cancelled: managedCity
-        ? sql<number>`COUNT(*) FILTER (WHERE status = 'cancelled' AND city = ${managedCity})`
+        ? (companyDriverIds !== null
+          ? (companyDriverIds.length > 0
+            ? sql<number>`COUNT(*) FILTER (WHERE status = 'cancelled' AND city = ${managedCity} AND driver_id = ANY(ARRAY[${sql.raw(companyDriverIds.join(',') || '0')}]::int[]))`
+            : sql<number>`0`)
+          : sql<number>`COUNT(*) FILTER (WHERE status = 'cancelled' AND city = ${managedCity})`)
         : sql<number>`COUNT(*) FILTER (WHERE status = 'cancelled')`,
       pending: managedCity
-        ? sql<number>`COUNT(*) FILTER (WHERE status = 'pending' AND city = ${managedCity})`
+        ? (companyDriverIds !== null
+          ? (companyDriverIds.length > 0
+            ? sql<number>`COUNT(*) FILTER (WHERE status = 'pending' AND city = ${managedCity} AND driver_id = ANY(ARRAY[${sql.raw(companyDriverIds.join(',') || '0')}]::int[]))`
+            : sql<number>`0`)
+          : sql<number>`COUNT(*) FILTER (WHERE status = 'pending' AND city = ${managedCity})`)
         : sql<number>`COUNT(*) FILTER (WHERE status = 'pending')`,
       revenue: managedCity
-        ? sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed' AND city = ${managedCity}), 0)`
+        ? (companyDriverIds !== null
+          ? (companyDriverIds.length > 0
+            ? sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed' AND city = ${managedCity} AND driver_id = ANY(ARRAY[${sql.raw(companyDriverIds.join(',') || '0')}]::int[])), 0)`
+            : sql<number>`0`)
+          : sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed' AND city = ${managedCity}), 0)`)
         : sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed'), 0)`,
       revenueToday: managedCity
-        ? sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed' AND completed_at >= ${today} AND city = ${managedCity}), 0)`
+        ? (companyDriverIds !== null
+          ? (companyDriverIds.length > 0
+            ? sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed' AND completed_at >= ${today} AND city = ${managedCity} AND driver_id = ANY(ARRAY[${sql.raw(companyDriverIds.join(',') || '0')}]::int[])), 0)`
+            : sql<number>`0`)
+          : sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed' AND completed_at >= ${today} AND city = ${managedCity}), 0)`)
         : sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed' AND completed_at >= ${today}), 0)`,
       avgRating: sql<number>`COALESCE(AVG(rating) FILTER (WHERE rating IS NOT NULL), 5.0)`,
     }).from(ordersTable),
 
     db.select({
       total: managedCity
-        ? sql<number>`COUNT(*) FILTER (WHERE COALESCE(work_city, city) = ${managedCity})`
+        ? (companyDriverIds !== null
+          ? sql<number>`${companyDriverIds.length}`
+          : sql<number>`COUNT(*) FILTER (WHERE COALESCE(work_city, city) = ${managedCity})`)
         : count(),
       active: managedCity
-        ? sql<number>`COUNT(*) FILTER (WHERE status IN ('online', 'busy') AND COALESCE(work_city, city) = ${managedCity})`
+        ? (companyDriverIds !== null
+          ? (companyDriverIds.length > 0
+            ? sql<number>`COUNT(*) FILTER (WHERE status IN ('online', 'busy') AND id = ANY(ARRAY[${sql.raw(companyDriverIds.join(',') || '0')}]::int[]))`
+            : sql<number>`0`)
+          : sql<number>`COUNT(*) FILTER (WHERE status IN ('online', 'busy') AND COALESCE(work_city, city) = ${managedCity})`)
         : sql<number>`COUNT(*) FILTER (WHERE status IN ('online', 'busy'))`,
     }).from(driversTable),
 
@@ -72,6 +120,7 @@ router.get("/stats", async (req, res): Promise<void> => {
     pendingOrders: Number(o.pending),
     avgRating: Math.round(Number(o.avgRating) * 10) / 10,
     city: managedCity,
+    company: partnerCompany,
   });
 });
 
@@ -80,8 +129,10 @@ router.get("/stats/by-city", async (req, res): Promise<void> => {
   today.setHours(0, 0, 0, 0);
 
   const user = await getUserFromRequest(req);
-  const managedCity: string | null =
-    user?.role === "city_admin" ? ((user as any).managed_city ?? (user as any).managedCity ?? null) : null;
+  const isCityAdmin = user?.role === "city_admin";
+  const managedCity: string | null = isCityAdmin
+    ? ((user as any).managed_city ?? (user as any).managedCity ?? null)
+    : null;
 
   const [ordersByCity, driversByCity] = await Promise.all([
     db.select({

@@ -89,6 +89,8 @@ function formatUser(user: any) {
     city: user.city,
     rating: user.rating,
     totalRides: user.totalRides,
+    managedCity: user.managed_city ?? user.managedCity ?? null,
+    partnerCompany: user.partner_company ?? user.partnerCompany ?? null,
     createdAt: user.createdAt instanceof Date ? user.createdAt : (user.createdAt ? new Date(user.createdAt) : new Date()),
   };
 }
