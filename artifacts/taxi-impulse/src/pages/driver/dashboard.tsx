@@ -755,20 +755,33 @@ export default function DriverDashboard() {
         {myProfile && (
           <div className="bg-[#0d0d1f] border border-violet-500/20 rounded-2xl p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <div>
+              <div className="flex-1">
                 <div className="flex items-center gap-1.5 mb-1">
                   <Wallet className="w-3.5 h-3.5 text-violet-400" />
-                  <span className="text-xs text-white/40 uppercase tracking-wider">Бонусный баланс</span>
+                  <span className="text-xs text-white/40 uppercase tracking-wider">Ваш баланс</span>
                 </div>
                 <div className="text-2xl font-bold text-violet-400">
                   {formatMoney(bonusData?.bonusBalance ?? 0)} ₽
                 </div>
-                <div className="text-xs text-white/30 mt-0.5">Начисляется когда пассажир использует бонусы</div>
+                {/* Breakdown */}
+                {((bonusData as any)?.taxiBalance > 0 || (bonusData as any)?.deliveryBalance > 0 || (bonusData as any)?.bonusOnlyBalance > 0) && (
+                  <div className="flex flex-wrap gap-2 mt-1.5">
+                    {(bonusData as any)?.taxiBalance > 0 && (
+                      <span className="text-xs text-white/30">🚖 Такси: {formatMoney((bonusData as any).taxiBalance)} ₽</span>
+                    )}
+                    {(bonusData as any)?.deliveryBalance > 0 && (
+                      <span className="text-xs text-white/30">📦 Доставка: {formatMoney((bonusData as any).deliveryBalance)} ₽</span>
+                    )}
+                    {(bonusData as any)?.bonusOnlyBalance > 0 && (
+                      <span className="text-xs text-white/30">🎁 Бонусы: {formatMoney((bonusData as any).bonusOnlyBalance)} ₽</span>
+                    )}
+                  </div>
+                )}
               </div>
               <button
                 onClick={() => setShowBonusWithdraw(!showBonusWithdraw)}
                 disabled={(bonusData?.bonusBalance ?? 0) <= 0}
-                className="px-3 py-2 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 disabled:opacity-40 text-violet-300 text-sm font-medium transition-all"
+                className="ml-3 px-3 py-2 rounded-xl bg-violet-600/20 hover:bg-violet-600/30 disabled:opacity-40 text-violet-300 text-sm font-medium transition-all"
               >
                 Вывести
               </button>

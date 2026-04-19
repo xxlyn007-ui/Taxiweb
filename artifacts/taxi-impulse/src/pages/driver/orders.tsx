@@ -201,16 +201,41 @@ export default function AvailableOrders() {
                     </div>
                   </div>
 
-                  {/* Passenger info */}
-                  <div className="flex items-center gap-4 mb-3 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                    <div className="flex items-center gap-1.5 text-xs text-white/50">
-                      <User className="w-3.5 h-3.5" />
-                      <span>{order.passengerName || 'Пассажир'}</span>
+                  {/* Scheduled time (for delivery) */}
+                  {(order as any).scheduledAt && (
+                    <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl bg-blue-500/10 border border-blue-500/20 text-xs text-blue-300">
+                      <Clock className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="font-medium">Время доставки:</span>
+                      <span>{new Date((order as any).scheduledAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
-                    {order.passengerPhone && (
-                      <div className="flex items-center gap-1.5 text-xs text-white/40">
+                  )}
+
+                  {/* Passenger / sender / recipient info */}
+                  <div className="space-y-1.5 mb-3">
+                    <div className="flex items-center gap-4 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                      <div className="flex items-center gap-1.5 text-xs text-white/50">
+                        <User className="w-3.5 h-3.5" />
+                        <span>{order.passengerName || 'Заказчик'}</span>
+                      </div>
+                      {order.passengerPhone && (
+                        <div className="flex items-center gap-1.5 text-xs text-white/40">
+                          <Phone className="w-3.5 h-3.5" />
+                          <span>{order.passengerPhone}</span>
+                        </div>
+                      )}
+                    </div>
+                    {(order as any).senderPhone && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs text-white/50">
                         <Phone className="w-3.5 h-3.5" />
-                        <span>{order.passengerPhone}</span>
+                        <span className="text-white/30">Отправитель:</span>
+                        <span>{(order as any).senderPhone}</span>
+                      </div>
+                    )}
+                    {(order as any).recipientPhone && (
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs text-white/50">
+                        <Phone className="w-3.5 h-3.5" />
+                        <span className="text-white/30">Получатель:</span>
+                        <span>{(order as any).recipientPhone}</span>
                       </div>
                     )}
                   </div>

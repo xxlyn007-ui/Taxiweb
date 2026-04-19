@@ -79,23 +79,31 @@ router.post("/referral/ensure-code", async (req, res): Promise<void> => {
 
 // === DRIVER BONUS ROUTES ===
 
-// GET /api/driver-bonus/:driverId — баланс и заявки водителя
+// GET /api/driver-bonus/:driverId — баланс и заявки водителя (все виды баланса)
 router.get("/driver-bonus/:driverId", async (req, res): Promise<void> => {
   const driverId = parseInt(req.params.driverId);
   if (isNaN(driverId)) { res.status(400).json({ error: "Неверный driverId" }); return; }
 
-  const [driver] = await db.select({ bonusBalance: driversTable.bonusBalance })
-    .from(driversTable).where(eq(driversTable.id, driverId));
+  const [driver] = await db.select({
+    bonusBalance: driversTable.bonusBalance,
+    balance: driversTable.balance,
+    deliveryBalance: (driversTable as any).deliveryBalance,
+  }).from(driversTable).where(eq(driversTable.id, driverId));
   if (!driver) { res.status(404).json({ error: "Водитель не найден" }); return; }
 
   const requests = await db.select().from(driverBonusRequestsTable)
     .where(eq(driverBonusRequestsTable.driverId, driverId))
     .orderBy(desc(driverBonusRequestsTable.createdAt));
 
-  res.json({ bonusBalance: driver.bonusBalance ?? 0, requests });
+  const taxiBalance = parseFloat(String(driver.balance ?? 0));
+  const bonusBalance = parseFloat(String(driver.bonusBalance ?? 0));
+  const deliveryBalance = parseFloat(String(driver.deliveryBalance ?? 0));
+  const totalBalance = taxiBalance + bonusBalance + deliveryBalance;
+
+  res.json({ bonusBalance: totalBalance, taxiBalance, bonusOnlyBalance: bonusBalance, deliveryBalance, requests });
 });
 
-// POST /api/driver-bonus/:driverId/request — заявка на вывод бонусов
+// POST /api/driver-bonus/:driverId/request — заявка на вывод (все балансы суммарно)
 router.post("/driver-bonus/:driverId/request", async (req, res): Promise<void> => {
   const driverId = parseInt(req.params.driverId);
   if (isNaN(driverId)) { res.status(400).json({ error: "Неверный driverId" }); return; }
@@ -105,11 +113,19 @@ router.post("/driver-bonus/:driverId/request", async (req, res): Promise<void> =
     res.status(400).json({ error: "Введите реквизиты и банк" }); return;
   }
 
-  const [driver] = await db.select({ bonusBalance: driversTable.bonusBalance })
-    .from(driversTable).where(eq(driversTable.id, driverId));
+  const [driver] = await db.select({
+    bonusBalance: driversTable.bonusBalance,
+    balance: driversTable.balance,
+    deliveryBalance: (driversTable as any).deliveryBalance,
+  }).from(driversTable).where(eq(driversTable.id, driverId));
   if (!driver) { res.status(404).json({ error: "Водитель не найден" }); return; }
-  if ((driver.bonusBalance ?? 0) <= 0) {
-    res.status(400).json({ error: "Нет бонусов для вывода" }); return;
+
+  const total = parseFloat(String(driver.balance ?? 0))
+    + parseFloat(String(driver.bonusBalance ?? 0))
+    + parseFloat(String(driver.deliveryBalance ?? 0));
+
+  if (total <= 0) {
+    res.status(400).json({ error: "Нет средств для вывода" }); return;
   }
 
   // Проверяем нет ли уже ожидающей заявки
@@ -125,7 +141,7 @@ router.post("/driver-bonus/:driverId/request", async (req, res): Promise<void> =
 
   const [request] = await db.insert(driverBonusRequestsTable).values({
     driverId,
-    amount: driver.bonusBalance ?? 0,
+    amount: Math.floor(total),
     cardOrPhone: cardOrPhone.trim(),
     bank: bank.trim(),
     status: "pending",
@@ -186,20 +202,16 @@ router.post("/admin/bonus-requests/:id/pay", async (req, res): Promise<void> => 
     res.status(409).json({ error: "Заявка уже обработана" }); return;
   }
 
-  // Списываем бонусы у водителя
-  const [driver] = await db.select({ bonusBalance: driversTable.bonusBalance })
-    .from(driversTable).where(eq(driversTable.id, request.driverId));
-  const newBalance = Math.max(0, (driver?.bonusBalance ?? 0) - request.amount);
-
+  // Обнуляем все балансы водителя при выплате
   await db.update(driversTable)
-    .set({ bonusBalance: newBalance })
+    .set({ bonusBalance: 0, balance: 0, deliveryBalance: 0 } as any)
     .where(eq(driversTable.id, request.driverId));
 
   await db.update(driverBonusRequestsTable)
     .set({ status: "paid", paidAt: new Date() })
     .where(eq(driverBonusRequestsTable.id, id));
 
-  res.json({ ok: true, newBalance });
+  res.json({ ok: true, newBalance: 0 });
 });
 
 // GET /api/admin/subscriptions/by-city — подписки по городам
