@@ -18,9 +18,15 @@ window.addEventListener("error", (e) => {
   }
 }, true);
 
-// Фикс чёрного экрана при переключении вкладок в PWA
-// Если страница становится видимой а root пуст — перезагружаем
+const appRoot = createRoot(document.getElementById("root")!);
+appRoot.render(<App />);
+
+// Фикс чёрного экрана при переключении вкладок в PWA — только после первого рендера
+let reactMounted = false;
+setTimeout(() => { reactMounted = true; }, 2000);
+
 document.addEventListener("visibilitychange", () => {
+  if (!reactMounted) return;
   if (document.visibilityState === "visible") {
     const root = document.getElementById("root");
     if (root && !root.hasChildNodes()) {
@@ -28,5 +34,3 @@ document.addEventListener("visibilitychange", () => {
     }
   }
 });
-
-createRoot(document.getElementById("root")!).render(<App />);
