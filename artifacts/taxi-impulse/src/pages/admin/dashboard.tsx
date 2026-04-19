@@ -8,7 +8,7 @@ export default function AdminDashboard() {
   const { data: cityStats } = useStatsByCityQuery();
 
   return (
-    <MainLayout allowedRoles={['admin']}>
+    <MainLayout allowedRoles={['admin', 'city_admin']}>
       <div className="space-y-5 max-w-5xl">
         <div>
           <h1 className="text-xl font-bold text-white">Статистика платформы</h1>

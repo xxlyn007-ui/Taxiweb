@@ -71,7 +71,7 @@ export default function AdminDrivers() {
   };
 
   return (
-    <MainLayout allowedRoles={['admin']}>
+    <MainLayout allowedRoles={['admin', 'city_admin']}>
       <div className="max-w-4xl space-y-5">
         <div>
           <h1 className="text-xl font-bold text-white">База водителей</h1>

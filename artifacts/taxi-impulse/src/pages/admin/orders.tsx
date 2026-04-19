@@ -18,7 +18,7 @@ export default function AdminOrders() {
   };
 
   return (
-    <MainLayout allowedRoles={['admin']}>
+    <MainLayout allowedRoles={['admin', 'city_admin']}>
       <div className="space-y-6">
         <h1 className="text-3xl font-display font-bold mb-6">Управление заказами</h1>
 
