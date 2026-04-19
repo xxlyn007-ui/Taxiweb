@@ -168,9 +168,9 @@ export default function Login() {
     <>
       {showTerms && <TermsModal onClose={() => setShowTerms(false)} />}
 
-      <div className="min-h-screen bg-[#07070f] flex flex-col md:flex-row">
+      <div className="min-h-screen bg-[#07070f] flex flex-col lg:flex-row overflow-x-hidden">
         {/* Left hero */}
-        <div className="hidden md:flex flex-1 flex-col items-center justify-center p-12 relative overflow-hidden">
+        <div className="hidden lg:flex flex-1 flex-col items-center justify-center p-12 relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-br from-violet-950/60 via-[#07070f] to-[#07070f]" />
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-violet-600/10 rounded-full blur-[100px]" />
           <div className="relative z-10 text-center max-w-sm">
