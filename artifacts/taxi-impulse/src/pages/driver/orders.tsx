@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useDriversQuery } from "@/hooks/use-drivers";
 import { useOrdersQuery, useUpdateOrderMutation } from "@/hooks/use-orders";
 import { formatMoney } from "@/lib/utils";
-import { MapPin, Clock, ChevronRight, Zap, AlertCircle } from "lucide-react";
+import { MapPin, Clock, ChevronRight, Zap, AlertCircle, User, Phone, Building2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -63,8 +63,13 @@ export default function AvailableOrders() {
       await updateOrder.mutateAsync({ id: orderId, data: { status: 'accepted', driverId: myProfile.id } });
       toast({ title: "Заказ принят! 🚗" });
       window.location.href = "/driver";
-    } catch {
-      toast({ title: "Заказ уже взяли", variant: "destructive" });
+    } catch (err: any) {
+      const msg = err?.response?.data?.error || err?.message || "";
+      if (msg === "subscription_required") {
+        toast({ title: "Требуется активная подписка", description: "Оплатите подписку в разделе профиля", variant: "destructive" });
+      } else {
+        toast({ title: "Заказ уже взяли", variant: "destructive" });
+      }
     }
   };
 
@@ -161,12 +166,23 @@ export default function AvailableOrders() {
 
                 {/* Route */}
                 <div className="px-5 py-4">
-                  {(order as any).orderType === 'delivery' && (
+                  {/* Delivery badge */}
+                  {order.orderType === 'delivery' && (
                     <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
                       📦 <span className="font-medium">Доставка</span>
-                      {(order as any).packageDescription && <span className="text-amber-300/70 ml-1">· {(order as any).packageDescription}</span>}
+                      {order.packageDescription && <span className="text-amber-300/70 ml-1">· {order.packageDescription}</span>}
                     </div>
                   )}
+
+                  {/* Company badge */}
+                  {order.partnerCompany && (
+                    <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-xl bg-violet-500/10 border border-violet-500/20 text-xs text-violet-300">
+                      <Building2 className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="font-medium">{order.partnerCompany}</span>
+                    </div>
+                  )}
+
+                  {/* Route */}
                   <div className="flex items-stretch gap-3 mb-3">
                     <div className="flex flex-col items-center py-0.5 gap-1">
                       <div className="w-2.5 h-2.5 rounded-full bg-violet-500" />
@@ -184,6 +200,21 @@ export default function AvailableOrders() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Passenger info */}
+                  <div className="flex items-center gap-4 mb-3 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                    <div className="flex items-center gap-1.5 text-xs text-white/50">
+                      <User className="w-3.5 h-3.5" />
+                      <span>{order.passengerName || 'Пассажир'}</span>
+                    </div>
+                    {order.passengerPhone && (
+                      <div className="flex items-center gap-1.5 text-xs text-white/40">
+                        <Phone className="w-3.5 h-3.5" />
+                        <span>{order.passengerPhone}</span>
+                      </div>
+                    )}
+                  </div>
+
                   {order.comment && (
                     <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs text-white/50">
                       💬 <span>{order.comment}</span>

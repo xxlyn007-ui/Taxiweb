@@ -296,6 +296,7 @@ function buildOrderShape(
     orderType: order.orderType || "taxi",
     comment: order.comment,
     packageDescription: order.packageDescription || null,
+    partnerCompany: (order as any).partnerCompany || null,
     rating: order.rating,
     bonusUsed: order.bonusUsed ?? 0,
     createdAt: toDate(order.createdAt),

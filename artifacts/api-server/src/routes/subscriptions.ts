@@ -438,7 +438,10 @@ export async function checkDriverSubscription(driverId: number): Promise<boolean
   const sub = await getOrCreateSubscription(driverId);
   if (!sub) return false;
   const status = computeStatus(sub);
-  return status === "active" || status === "trial";
+  if (status === "active" || status === "trial") return true;
+  // Водители с pending статусом (оплата в процессе) — разрешаем если срок ещё не истёк
+  if (sub.status === "pending" && new Date(sub.endDate) > new Date()) return true;
+  return false;
 }
 
 export default router;
