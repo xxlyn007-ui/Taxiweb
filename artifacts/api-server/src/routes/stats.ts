@@ -1,30 +1,57 @@
 import { Router, type IRouter } from "express";
-import { sql, count } from "drizzle-orm";
+import { sql, count, eq } from "drizzle-orm";
 import { db, ordersTable, driversTable, usersTable } from "@workspace/db";
+import { getUserFromRequest } from "./auth";
 
 const router: IRouter = Router();
 
-router.get("/stats", async (_req, res): Promise<void> => {
+router.get("/stats", async (req, res): Promise<void> => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
+  const user = await getUserFromRequest(req);
+  const managedCity: string | null =
+    user?.role === "city_admin" ? ((user as any).managed_city ?? (user as any).managedCity ?? null) : null;
+
   const [ordersStats, driversStats, usersStats] = await Promise.all([
     db.select({
-      total: count(),
-      ordersToday: sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today})`,
-      completed: sql<number>`COUNT(*) FILTER (WHERE status = 'completed')`,
-      cancelled: sql<number>`COUNT(*) FILTER (WHERE status = 'cancelled')`,
-      pending: sql<number>`COUNT(*) FILTER (WHERE status = 'pending')`,
-      revenue: sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed'), 0)`,
-      revenueToday: sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed' AND completed_at >= ${today}), 0)`,
+      total: managedCity
+        ? sql<number>`COUNT(*) FILTER (WHERE city = ${managedCity})`
+        : count(),
+      ordersToday: managedCity
+        ? sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today} AND city = ${managedCity})`
+        : sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today})`,
+      completed: managedCity
+        ? sql<number>`COUNT(*) FILTER (WHERE status = 'completed' AND city = ${managedCity})`
+        : sql<number>`COUNT(*) FILTER (WHERE status = 'completed')`,
+      cancelled: managedCity
+        ? sql<number>`COUNT(*) FILTER (WHERE status = 'cancelled' AND city = ${managedCity})`
+        : sql<number>`COUNT(*) FILTER (WHERE status = 'cancelled')`,
+      pending: managedCity
+        ? sql<number>`COUNT(*) FILTER (WHERE status = 'pending' AND city = ${managedCity})`
+        : sql<number>`COUNT(*) FILTER (WHERE status = 'pending')`,
+      revenue: managedCity
+        ? sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed' AND city = ${managedCity}), 0)`
+        : sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed'), 0)`,
+      revenueToday: managedCity
+        ? sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed' AND completed_at >= ${today} AND city = ${managedCity}), 0)`
+        : sql<number>`COALESCE(SUM(price) FILTER (WHERE status = 'completed' AND completed_at >= ${today}), 0)`,
       avgRating: sql<number>`COALESCE(AVG(rating) FILTER (WHERE rating IS NOT NULL), 5.0)`,
     }).from(ordersTable),
+
     db.select({
-      total: count(),
-      active: sql<number>`COUNT(*) FILTER (WHERE status IN ('online', 'busy'))`,
+      total: managedCity
+        ? sql<number>`COUNT(*) FILTER (WHERE COALESCE(work_city, city) = ${managedCity})`
+        : count(),
+      active: managedCity
+        ? sql<number>`COUNT(*) FILTER (WHERE status IN ('online', 'busy') AND COALESCE(work_city, city) = ${managedCity})`
+        : sql<number>`COUNT(*) FILTER (WHERE status IN ('online', 'busy'))`,
     }).from(driversTable),
+
     db.select({
-      passengers: sql<number>`COUNT(*) FILTER (WHERE role = 'passenger')`,
+      passengers: managedCity
+        ? sql<number>`COUNT(*) FILTER (WHERE role = 'passenger' AND city = ${managedCity})`
+        : sql<number>`COUNT(*) FILTER (WHERE role = 'passenger')`,
     }).from(usersTable),
   ]);
 
@@ -33,10 +60,10 @@ router.get("/stats", async (_req, res): Promise<void> => {
   const u = usersStats[0];
 
   res.json({
-    totalOrders: o.total,
+    totalOrders: Number(o.total),
     ordersToday: Number(o.ordersToday),
     activeDrivers: Number(d.active),
-    totalDrivers: d.total,
+    totalDrivers: Number(d.total),
     totalPassengers: Number(u.passengers),
     revenue: Math.round(Number(o.revenue) * 100) / 100,
     revenueToday: Math.round(Number(o.revenueToday) * 100) / 100,
@@ -44,25 +71,34 @@ router.get("/stats", async (_req, res): Promise<void> => {
     cancelledOrders: Number(o.cancelled),
     pendingOrders: Number(o.pending),
     avgRating: Math.round(Number(o.avgRating) * 10) / 10,
+    city: managedCity,
   });
 });
 
-router.get("/stats/by-city", async (_req, res): Promise<void> => {
+router.get("/stats/by-city", async (req, res): Promise<void> => {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  const user = await getUserFromRequest(req);
+  const managedCity: string | null =
+    user?.role === "city_admin" ? ((user as any).managed_city ?? (user as any).managedCity ?? null) : null;
 
   const [ordersByCity, driversByCity] = await Promise.all([
     db.select({
       city: ordersTable.city,
       total: count(),
       today: sql<number>`COUNT(*) FILTER (WHERE created_at >= ${today})`,
-    }).from(ordersTable).groupBy(ordersTable.city),
+    }).from(ordersTable)
+      .where(managedCity ? eq(ordersTable.city, managedCity) : undefined)
+      .groupBy(ordersTable.city),
 
     db.select({
       city: sql<string>`COALESCE(work_city, city)`,
       total: count(),
       online: sql<number>`COUNT(*) FILTER (WHERE status IN ('online', 'busy'))`,
-    }).from(driversTable).groupBy(sql`COALESCE(work_city, city)`),
+    }).from(driversTable)
+      .where(managedCity ? sql`COALESCE(work_city, city) = ${managedCity}` : undefined)
+      .groupBy(sql`COALESCE(work_city, city)`),
   ]);
 
   const citySet = new Set<string>([

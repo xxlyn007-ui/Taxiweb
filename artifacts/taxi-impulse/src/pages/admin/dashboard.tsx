@@ -1,9 +1,14 @@
 import { MainLayout } from "@/components/layout/main-layout";
+import { useAuth } from "@/hooks/use-auth";
 import { useStatsQuery, useStatsByCityQuery } from "@/hooks/use-admin";
 import { formatMoney } from "@/lib/utils";
 import { TrendingUp, Car, Users, MapPin, Activity, DollarSign } from "lucide-react";
 
 export default function AdminDashboard() {
+  const { user } = useAuth();
+  const isCityAdmin = user?.role === "city_admin";
+  const managedCity: string | undefined = isCityAdmin ? (user as any).managedCity ?? undefined : undefined;
+
   const { data: stats } = useStatsQuery();
   const { data: cityStats } = useStatsByCityQuery();
 
@@ -11,8 +16,12 @@ export default function AdminDashboard() {
     <MainLayout allowedRoles={['admin', 'city_admin']}>
       <div className="space-y-5 max-w-5xl">
         <div>
-          <h1 className="text-xl font-bold text-white">Статистика платформы</h1>
-          <p className="text-sm text-white/40 mt-0.5">Актуальные данные по всем городам</p>
+          <h1 className="text-xl font-bold text-white">
+            {isCityAdmin ? `Статистика — ${managedCity || "ваш город"}` : "Статистика платформы"}
+          </h1>
+          <p className="text-sm text-white/40 mt-0.5">
+            {isCityAdmin ? `Актуальные данные по городу ${managedCity || ""}` : "Актуальные данные по всем городам"}
+          </p>
         </div>
 
         {/* Top KPI cards */}
@@ -43,47 +52,49 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        {/* City breakdown */}
-        <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl overflow-hidden">
-          <div className="px-5 py-4 border-b border-white/[0.06] flex items-center gap-2">
-            <MapPin className="w-4 h-4 text-violet-400" />
-            <h3 className="text-sm font-semibold text-white">По городам Красноярского края</h3>
-          </div>
-
-          {!cityStats || cityStats.length === 0 ? (
-            <div className="px-5 py-8 text-center text-white/30 text-sm">Данных пока нет</div>
-          ) : (
-            <div className="divide-y divide-white/[0.04]">
-              <div className="grid grid-cols-5 px-5 py-2.5 text-xs text-white/30 uppercase tracking-wider">
-                <span className="col-span-2">Город</span>
-                <span className="text-center">Заказов сегодня</span>
-                <span className="text-center">Всего</span>
-                <span className="text-center">Водители</span>
-              </div>
-              {cityStats.map(city => (
-                <div key={city.city} className="grid grid-cols-5 px-5 py-3.5 items-center hover:bg-white/[0.02] transition-colors">
-                  <div className="col-span-2">
-                    <div className="text-sm font-medium text-white">{city.city}</div>
-                  </div>
-                  <div className="text-center">
-                    <span className={`text-sm font-semibold ${city.ordersToday > 0 ? 'text-violet-400' : 'text-white/30'}`}>
-                      {city.ordersToday}
-                    </span>
-                  </div>
-                  <div className="text-center">
-                    <span className="text-sm text-white/60">{city.totalOrders}</span>
-                  </div>
-                  <div className="text-center">
-                    <span className="text-xs">
-                      <span className="text-emerald-400 font-medium">{city.driversOnline}</span>
-                      <span className="text-white/30">/{city.totalDrivers}</span>
-                    </span>
-                  </div>
-                </div>
-              ))}
+        {/* City breakdown — только для главного admin */}
+        {!isCityAdmin && (
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-white/[0.06] flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-violet-400" />
+              <h3 className="text-sm font-semibold text-white">По городам Красноярского края</h3>
             </div>
-          )}
-        </div>
+
+            {!cityStats || cityStats.length === 0 ? (
+              <div className="px-5 py-8 text-center text-white/30 text-sm">Данных пока нет</div>
+            ) : (
+              <div className="divide-y divide-white/[0.04]">
+                <div className="grid grid-cols-5 px-5 py-2.5 text-xs text-white/30 uppercase tracking-wider">
+                  <span className="col-span-2">Город</span>
+                  <span className="text-center">Заказов сегодня</span>
+                  <span className="text-center">Всего</span>
+                  <span className="text-center">Водители</span>
+                </div>
+                {cityStats.map(city => (
+                  <div key={city.city} className="grid grid-cols-5 px-5 py-3.5 items-center hover:bg-white/[0.02] transition-colors">
+                    <div className="col-span-2">
+                      <div className="text-sm font-medium text-white">{city.city}</div>
+                    </div>
+                    <div className="text-center">
+                      <span className={`text-sm font-semibold ${city.ordersToday > 0 ? 'text-violet-400' : 'text-white/30'}`}>
+                        {city.ordersToday}
+                      </span>
+                    </div>
+                    <div className="text-center">
+                      <span className="text-sm text-white/60">{city.totalOrders}</span>
+                    </div>
+                    <div className="text-center">
+                      <span className="text-xs">
+                        <span className="text-emerald-400 font-medium">{city.driversOnline}</span>
+                        <span className="text-white/30">/{city.totalDrivers}</span>
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </MainLayout>
   );
